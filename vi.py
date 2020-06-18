@@ -45,7 +45,7 @@ def dino(skill, attr, g, s):
 
 
 def ho_dina(lam0, lam1, theta, attr, g, s):
-    skill_p = torch.sigmoid(theta * lam1 + lam0)
+    skill_p = torch.sigmoid(theta.mm(lam1) + lam0)
     skill = pyro.sample('skill', dist.Bernoulli(skill_p).to_event(1))
     return dina(skill, attr, g, s)
 
@@ -56,7 +56,7 @@ def ho_dina(lam0, lam1, theta, attr, g, s):
 
 class RandomPsyData(object):
 
-    def __init__(self, sample_size=100000, item_size=100):
+    def __init__(self, sample_size=10000, item_size=100):
         self.item_size = item_size
         self.sample_size = sample_size
 
@@ -66,6 +66,7 @@ class RandomDina(RandomPsyData):
     def __init__(self, attr_size=5, attr_p=0.5, skill_p=0.5, g_shape1=1, g_shape2=2, g_a=0, g_b=0.6, s_shape1=1,
                  s_shape2=2, s_a=0, s_b=0.6, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.attr_size = attr_size
         self.attr = torch.FloatTensor(attr_size, self.item_size).bernoulli_(attr_p)
         self.skill = torch.FloatTensor(self.sample_size, attr_size).bernoulli_(skill_p)
         self.g = self._r4beta(g_shape1, g_shape2, g_a, g_b, (1, self.item_size))
@@ -116,6 +117,7 @@ class RandomIrt1PL(RandomPsyData):
             **kwargs
     ):
         super().__init__(*args, **kwargs)
+        self.x_feature = x_feature
         self.x = torch.FloatTensor(self.sample_size, x_feature).normal_(x_local, x_scale)
         self.b = torch.FloatTensor(1, self.item_size).normal_(b_local, b_scale)
 
@@ -387,14 +389,14 @@ class VHOCDM(nn.Module):
         sample_size = self.sample_size
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.3, constraint=constraints.less_than(0.4))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.3, constraint=constraints.less_than(0.4))
-        lam0 = pyro.param('lam0', torch.zeros(5))
-        lam1 = pyro.param('lam1', torch.ones(5))
+        lam0 = pyro.param('lam0', torch.zeros((1, 5)))
+        lam1 = pyro.param('lam1', torch.ones((1, 5)))
         with pyro.plate("data", sample_size) as ind:
             theta = pyro.sample(
                 'theta',
                 dist.Normal(torch.zeros((len(ind), 1)), torch.ones((len(ind), 1))).to_event(1)
             )
-            p = ho_dina(theta, lam0, lam1, self.attr, g, s)
+            p = ho_dina(lam0, lam1, theta, self.attr, g, s)
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
 
     def guide(self, data):
@@ -404,7 +406,7 @@ class VHOCDM(nn.Module):
         with pyro.plate("data", sample_size, subsample_size=1000) as idx:
             pyro.sample(
                 'theta',
-                dist.Bernoulli(theta_scale[idx], theta_local[idx]).to_event(1)
+                dist.Normal(theta_scale[idx], theta_local[idx]).to_event(1)
             )
 
     def fit(self, optim=Adam({'lr': 5e-3}), loss=Trace_ELBO(num_particles=1), max_iter=50000):
@@ -437,7 +439,7 @@ if __name__ == '__main__':
     #     y = y.cuda()
     # irt = VaeIRT(data=y, irt_model='irt_4pl', subsample_size=100)
     # irt.fit(optim=Adam({'lr': 5e-3}), max_iter=5000)
-    cdm_random = RandomHoCDM()
+    cdm_random = RandomHoDina()
     y = cdm_random.y
     # y.requires_grad = False
     attr = cdm_random.attr
