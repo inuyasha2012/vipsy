@@ -10,6 +10,7 @@ from tqdm import trange
 
 # ======心理测量模型 start=============
 
+
 def irt_1pl(x, b):
     return torch.sigmoid(x + b)
 
@@ -85,6 +86,7 @@ class RandomDina(RandomPsyData):
 
 class RandomDino(RandomDina):
 
+    @property
     def y(self):
         p = dino(self.skill, self.attr, self.g, self.s)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
@@ -136,7 +138,7 @@ class RandomIrt2PL(RandomIrt1PL):
             *args,
             **kwargs
     ):
-        super().__init__(*args, *kwargs)
+        super(RandomIrt2PL, self).__init__(*args, **kwargs)
         self.a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
 
     @property
@@ -168,7 +170,7 @@ class RandomIrt4PL(RandomIrt3PL):
         p = irt_4pl(self.x, self.a, self.b, self.c, self.d)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
-# ======随机数据生成 end=======
+# ======随机数据生成 end===============
 
 # ======深度生成模型 start=============
 
@@ -302,8 +304,7 @@ class BaseCDM(BasePsy):
 
     CDM_FUN = {
         'dina': dina,
-        'dino': dino,
-        'ho-dina': ho_dina,
+        'dino': dino
     }
 
     def __init__(self, attr, model='dina', *args, **kwargs):
@@ -325,24 +326,21 @@ class BaseCDM(BasePsy):
             p = self.CDM_FUN[self._model](skill, self.attr, g, s)
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
 
-    def fit(self, optim=Adam({'lr': 5e-3}), loss=Trace_ELBO(num_particles=1), max_iter=5000):
+    def fit(self, optim=Adam({'lr': 5e-3}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
         with trange(max_iter) as t:
             for i in t:
                 t.set_description(f'迭代：{i}')
                 svi.step(self.data)
-                loss = svi.evaluate_loss(y)
+                loss = svi.evaluate_loss(self.data)
                 with torch.no_grad():
-                    g = pyro.param('g')
-                    s = pyro.param('s')
-                    # lam0 = pyro.param('lam0')
-                    # lam1 = pyro.param('lam1')
-                    postfix_kwargs = {
-                        'g': '{0}'.format((g - cdm_random.g).abs().mean()),
-                        's': '{0}'.format((s - cdm_random.s).abs().mean()),
-                        # 'lam0': '{0}'.format((lam0 - cdm_random.lam0).abs().mean()),
-                        # 'lam1': '{0}'.format((lam1 - cdm_random.lam1).abs().mean())
-                    }
+                    if random_instance is not None:
+                        g = pyro.param('g')
+                        s = pyro.param('s')
+                        postfix_kwargs = {
+                            'g': '{0}'.format((g - random_instance.g).abs().mean()),
+                            's': '{0}'.format((s - random_instance.s).abs().mean())
+                        }
                     t.set_postfix(loss=loss, **postfix_kwargs)
 
 
@@ -354,11 +352,11 @@ class VaeCDM(BaseCDM):
     def guide(self, data):
         sample_size = self.sample_size
         pyro.module('encoder', self.encoder)
-        with pyro.plate("data", sample_size, subsample_size=1000) as ind:
-            skill_p = self.encoder.forward(data[ind])
+        with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
+            skill_p = self.encoder.forward(data[idx])
             pyro.sample(
                 'skill',
-                dist.Bernoulli(skill_p[ind]).to_event(1)
+                dist.Bernoulli(skill_p).to_event(1)
             )
 
 
@@ -367,10 +365,10 @@ class VCDM(BaseCDM):
     def guide(self, data):
         sample_size = self.sample_size
         skill_p = pyro.param('skill_p', torch.zeros((sample_size, self.skill_size)) + 0.5, constraint=constraints.unit_interval)
-        with pyro.plate("data", sample_size, subsample_size=1000) as ind:
+        with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
             pyro.sample(
                 'skill',
-                dist.Bernoulli(skill_p[ind]).to_event(1)
+                dist.Bernoulli(skill_p[idx]).to_event(1)
             )
 
 
