@@ -48,7 +48,7 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 100)
         irt = VIRT(data=y, model='irt_2pl')
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
@@ -113,7 +113,10 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, attr, random_instance = self.gen_sample(RandomDina, 100000)
+        # y, attr, random_instance = self.gen_sample(RandomDina, 100000)
+        random_instance = RandomHoDina(sample_size=100000)
+        y = random_instance.y
+        attr = random_instance.attr
         irt = VaeCDM(data=y, attr=attr, model='dina', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
 
