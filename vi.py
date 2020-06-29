@@ -3,7 +3,7 @@ import torch.distributions
 import pyro
 from pyro import distributions as dist
 from pyro.distributions import constraints
-from pyro.infer import SVI, Trace_ELBO
+from pyro.infer import SVI, Trace_ELBO, config_enumerate, TraceEnum_ELBO
 from pyro.optim import Adam
 from torch import nn
 from tqdm import trange
@@ -47,7 +47,7 @@ def dino(skill, attr, g, s):
 
 def ho_dina(lam0, lam1, theta, attr, g, s):
     skill_p = torch.sigmoid(theta.mm(lam1) + lam0)
-    skill = pyro.sample('skill', dist.Bernoulli(skill_p).to_event(1))
+    skill = pyro.sample('skill', dist.Bernoulli(skill_p))
     return dina(skill, attr, g, s)
 
 # ======心理测量模型 end=============
@@ -206,7 +206,7 @@ class ZEncoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, x_dim)
-        self.relu = nn.Softplus()
+        self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -396,32 +396,29 @@ class VHOCDM(nn.Module):
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
-        g = pyro.param('g', torch.FloatTensor(1, item_size).uniform_(0, 0.3), constraint=constraints.interval(0, 0.3))
-        s = pyro.param('s', torch.FloatTensor(1, item_size).uniform_(0, 0.3), constraint=constraints.interval(0, 0.3))
-        with pyro.plate("data", sample_size) as ind:
-            skill = pyro.sample(
-                'skill',
-                dist.Bernoulli(torch.zeros((len(ind), self.skill_size)) + 0.5).to_event(1)
+        g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 0.3))
+        s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 0.3))
+        lam0 = pyro.param('lam0', torch.zeros((1, 5)))
+        lam1 = pyro.param('lam1', torch.ones((1, 5)), constraint=constraints.positive)
+        with pyro.plate("data", sample_size, dim=-2) as ind:
+            theta = pyro.sample(
+                'theta',
+                dist.Normal(torch.zeros((len(ind), 1)), torch.ones((len(ind), 1)))
             )
-            p = dina(skill, self.attr, g, s)
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
+            p = ho_dina(lam0, lam1, theta, self.attr, g, s)
+            pyro.sample('y', dist.Bernoulli(p), obs=data[ind])
 
     def guide(self, data):
         sample_size = self.sample_size
-        # theta_local = pyro.param('theta_local', torch.FloatTensor(sample_size, 1).uniform_(-3, 3))
-        # theta_scale = pyro.param('theta_scale', torch.FloatTensor(sample_size, 1).uniform_(1, 2), constraint=constraints.positive)
-        lam0 = pyro.param('lam0', torch.zeros((1, 5)))
-        lam1 = pyro.param('lam1', torch.ones((1, 5)), constraint=constraints.interval(0, 3))
-        pyro.module('encoder', self.encoder)
-        with pyro.plate("data", sample_size, subsample_size=100) as idx:
-            theta = self.encoder.forward(data[idx])
-            skill_p = torch.sigmoid(theta.mm(lam1) + lam0)
+        theta_local = pyro.param('theta_local', torch.zeros((sample_size, 1)))
+        theta_scale = pyro.param('theta_scale', torch.ones((sample_size, 1)), constraint=constraints.positive)
+        with pyro.plate("data", sample_size, subsample_size=1000, dim=-2) as idx:
             pyro.sample(
-                'skill',
-                dist.Bernoulli(skill_p).to_event(1)
+                'theta',
+                dist.Normal(theta_local[idx], theta_scale[idx])
             )
 
-    def fit(self, optim=Adam({'lr': 1e-2}), loss=Trace_ELBO(num_particles=1), max_iter=50000):
+    def fit(self, optim=Adam({'lr': 1e-1}), loss=Trace_ELBO(num_particles=1), max_iter=50000):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
         with trange(max_iter) as t:
             for i in t:
@@ -442,20 +439,113 @@ class VHOCDM(nn.Module):
                     t.set_postfix(loss=loss, **postfix_kwargs)
 
 
+def cb(skill_size):
+    skill_lt = torch.zeros((2 ** skill_size, skill_size))
+    for i in range(2 ** skill_size):
+        dec2bin(i, skill_lt)
+    return skill_lt
+
+
+def dec2bin(idx, skill_lt):
+    num = idx
+    count = 0
+    while True:
+        if num == 0:
+            break
+        num, rem = divmod(num, 2)
+        skill_lt[idx][count] = rem
+        count += 1
+
+
+def get_eta(skill_lt, attr):
+    eta = skill_lt.mm(attr)
+    aa = (attr ** 2).sum(dim=0)
+    eta[eta < aa] = 0
+    eta[eta == aa] = 1
+    return eta
+
+
+class FuckCDM(BasePsy):
+
+    def __init__(self, attr, model='dina', *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.attr = attr
+        self.skill_size = attr.size(0)
+        self._model = model
+        self.skill_lt = cb(self.skill_size)
+        self.encoder = NormEncoder(self.item_size, 1, 64)
+
+    @config_enumerate
+    def model(self, data):
+        item_size = self.item_size
+        sample_size = self.sample_size
+        g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
+        s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
+        p_lt = dina(self.skill_lt, self.attr, g, s)
+        lam0 = pyro.param('lam0', torch.zeros((1, 5)))
+        lam1 = pyro.param('lam1', torch.ones((1, 5)), constraint=constraints.positive)
+        with pyro.plate("data", sample_size) as ind:
+            theta = pyro.sample(
+                'theta',
+                dist.Normal(torch.zeros((len(ind), 1)), torch.ones((len(ind), 1))).to_event(1)
+            )
+            skill_p_ = torch.sigmoid(theta.mm(lam1) + lam0)
+            skill_p = torch.exp(torch.log(skill_p_).mm(self.skill_lt.T) + torch.log(1 - skill_p_).mm(1 - self.skill_lt.T))
+            skill_idx = pyro.sample(
+                'skill_idx',
+                dist.Categorical(skill_p).to_event(0)
+            )
+            p = p_lt[skill_idx]
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
+
+    def guide(self, data):
+        sample_size = self.sample_size
+        # theta_local = pyro.param('theta_local', torch.zeros((sample_size, 1)))
+        # theta_scale = pyro.param('theta_scale', torch.ones((sample_size, 1)), constraint=constraints.positive)
+        pyro.module('encoder', self.encoder)
+        with pyro.plate("data", sample_size, subsample_size=100) as idx:
+            theta_local, theta_scale = self.encoder.forward(data[idx])
+            pyro.sample(
+                'theta',
+                dist.Normal(theta_local, theta_scale).to_event(1)
+            )
+
+    def fit(self, optim=Adam({'lr': 5e-3}), loss=TraceEnum_ELBO(num_particles=1), max_iter=50000, random_instance=None):
+        svi = SVI(self.model, self.guide, optim=optim, loss=loss)
+        with trange(max_iter) as t:
+            for i in t:
+                t.set_description(f'迭代：{i}')
+                svi.step(self.data)
+                loss = svi.evaluate_loss(self.data)
+                with torch.no_grad():
+                    if random_instance is not None:
+                        g = pyro.param('g')
+                        s = pyro.param('s')
+                        lam0 = pyro.param('lam0')
+                        lam1 = pyro.param('lam1')
+                        # theta = pyro.param('theta_local')
+                        postfix_kwargs = {
+                            'g': '{0}'.format((g - cdm_random.g).pow(2).sqrt().mean()),
+                            's': '{0}'.format((s - cdm_random.s).pow(2).sqrt().mean()),
+                            'lam0': '{0}'.format((lam0 - cdm_random.lam0).pow(2).sqrt().mean()),
+                            'lam1': '{0}'.format((lam1 - cdm_random.lam1).pow(2).sqrt().mean()),
+                            # 'theta': '{0}'.format((theta - random_instance.theta).pow(2).sqrt().mean())
+                        }
+                    t.set_postfix(loss=loss, **postfix_kwargs)
+
+
 if __name__ == '__main__':
     print('cuda: {0}'.format(torch.cuda.is_available()))
-    # irt_random = IrtRandom(irt_model='irt_4pl')
-    # y = irt_random.y
-    # if torch.cuda.is_available():
-    #     torch.set_default_tensor_type('torch.cuda.FloatTensor')
-    #     y = y.cuda()
-    # irt = VaeIRT(data=y, irt_model='irt_4pl', subsample_size=100)
-    # irt.fit(optim=Adam({'lr': 5e-3}), max_iter=5000)
-    cdm_random = RandomHoDina(sample_size=100000)
+    cdm_random = RandomHoDina(sample_size=1000)
     y = cdm_random.y
-    # y.requires_grad = False
     attr = cdm_random.attr
-    # attr.requires_grad = False
+
+    # def per_param_callable(module_name, param_name):
+    #     if param_name in ('lam0', 'lam1'):
+    #         return {"lr": 0.01}
+    #     else:
+    #         return {"lr": 0.1}
+
     cdm = VHOCDM(data=y, attr=attr)
     cdm.fit()
     # kernel = NUTS(model=cdm.model)
