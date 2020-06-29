@@ -1,5 +1,6 @@
 from unittest import TestCase
 
+import numpy as np
 from pyro.optim import Adam
 import torch
 
@@ -21,6 +22,7 @@ class IRTRandomMixin(object):
     def gen_sample(self, random_class, sample_size):
         random_instance = random_class(sample_size=sample_size)
         y = random_instance.y
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
         if self.cuda:
             y = y.cuda()
         return y, random_instance
@@ -66,10 +68,10 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt3PL, 1000)
         irt = VIRT(data=y, model='irt_3pl', subsample_size=1000)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}), max_iter=50000)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt3PL, 100000)
+        y, random_instance = self.gen_sample(RandomIrt3PL, 1000000)
         irt = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
 
