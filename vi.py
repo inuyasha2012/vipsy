@@ -29,7 +29,9 @@ def irt_2pl(x, a, b):
     :param b: 截距
     :return: 反应概率
     """
-    return torch.sigmoid(x.mm(a) + b)
+    mask = torch.ones_like(a)
+    mask[-1, -1] = 0
+    return torch.sigmoid(x.mm(a * mask) + b)
 
 
 def irt_3pl(x, a, b, c):
@@ -238,6 +240,7 @@ class RandomIrt2PL(RandomIrt1PL):
         """
         super(RandomIrt2PL, self).__init__(*args, **kwargs)
         self.a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
+        self.a[-1, -1] = 0
 
     @property
     def y(self):
@@ -360,16 +363,19 @@ class BaseIRT(BasePsy):
         'irt_4pl': irt_4pl,
     }
 
-    def __init__(self, model='irt_2pl', *args, **kwargs):
+    def __init__(self, model='irt_2pl', x_feature=1, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model = model
+        self.x_feature = x_feature
 
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
         irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size)))}
         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
-            irt_param_kwargs['a'] = pyro.param('a', torch.ones((1, item_size)))
+            a = torch.ones((self.x_feature, item_size))
+            a[-1, -1] = 0
+            irt_param_kwargs['a'] = pyro.param('a', a)
         if self._model in ('irt_3pl', 'irt_4pl'):
             irt_param_kwargs['c'] = pyro.param('c', torch.zeros((1, item_size)))
         if self._model == 'irt_4pl':
@@ -377,7 +383,7 @@ class BaseIRT(BasePsy):
         with pyro.plate("data", sample_size) as ind:
             irt_param_kwargs['x'] = pyro.sample(
                 'x',
-                dist.Normal(torch.zeros((len(ind), 1)), torch.ones((len(ind), 1))).to_event(1)
+                dist.Normal(torch.zeros((len(ind), self.x_feature)), torch.ones((len(ind), self.x_feature))).to_event(1)
             )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
@@ -388,8 +394,7 @@ class BaseIRT(BasePsy):
         with trange(max_iter) as t:
             for i in t:
                 t.set_description(f'迭代：{i}')
-                svi.step(self.data)
-                loss = svi.evaluate_loss(self.data)
+                loss = svi.step(self.data)
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
@@ -427,8 +432,8 @@ class VIRT(BaseIRT):
     def guide(self, data):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
-        x_local = pyro.param('x_local', torch.zeros((sample_size, 1)))
-        x_scale = pyro.param('x_scale', torch.ones((sample_size, 1)), constraint=constraints.positive)
+        x_local = pyro.param('x_local', torch.zeros((sample_size, self.x_feature)))
+        x_scale = pyro.param('x_scale', torch.ones((sample_size, self.x_feature)), constraint=constraints.positive)
         with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
             pyro.sample('x', dist.Normal(x_local[idx], x_scale[idx]).to_event(1))
 

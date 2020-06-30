@@ -19,8 +19,8 @@ class TestMixin(object):
 
 class IRTRandomMixin(object):
 
-    def gen_sample(self, random_class, sample_size):
-        random_instance = random_class(sample_size=sample_size)
+    def gen_sample(self, random_class, sample_size, **kwargs):
+        random_instance = random_class(sample_size=sample_size, **kwargs)
         y = random_instance.y
         np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
         if self.cuda:
@@ -52,6 +52,22 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
         model = VIRT(data=y, model='irt_2pl')
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+
+    def test_ai(self):
+        y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+
+class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
+
+    def setUp(self):
+        self.prepare_cuda()
+
+    def test_bbvi(self):
+        y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2)
+        model = VIRT(data=y, model='irt_2pl', x_feature=2)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
