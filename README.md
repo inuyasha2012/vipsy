@@ -1,5 +1,5 @@
-# virt
-virt是《变分推断在计量心理模型中的应用(variational inference for psychometrics model)》这篇论文的代码，这篇论文主要用于评职称，论文发表中。
+# vipsy
+vipsy是《变分推断在计量心理模型中的应用(variational inference for psychometrics model)》这篇论文的代码，这篇论文主要用于评职称，论文发表中。
 
 斯坦福大学的项目[variational-item-response-theory-public](https://github.com/mhw32/variational-item-response-theory-public)结果无法重现，不知道是调参问题还是什么原因，并且斯坦福大学项目的问题还蛮多的，遂重新开发了基于变分推断的项目反应理论参数估计代码，并且加入了基于变分推断的认知诊断模型参数估计代码。
 
