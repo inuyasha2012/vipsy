@@ -97,13 +97,13 @@ class CDMRandomMixin(object):
     def gen_sample(self, random_class, sample_size):
         random_instance = random_class(sample_size=sample_size)
         y = random_instance.y
-        attr = random_instance.attr
+        q = random_instance.q
         np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_attr.txt', attr.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_q.txt', q.numpy())
         if self.cuda:
             y = y.cuda()
-            attr = attr.cuda()
-        return y, attr, random_instance
+            q = q.cuda()
+        return y, q, random_instance
 
 
 class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -112,13 +112,13 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, attr, random_instance = self.gen_sample(RandomDina, 1000)
-        irt = VCDM(data=y, attr=attr, model='dina', subsample_size=1000)
+        y, q, random_instance = self.gen_sample(RandomDina, 1000)
+        irt = VCDM(data=y, q=q, model='dina', subsample_size=1000)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, attr, random_instance = self.gen_sample(RandomDina, 100000)
-        irt = VaeCDM(data=y, attr=attr, model='dina', subsample_size=100)
+        y, q, random_instance = self.gen_sample(RandomDina, 100000)
+        irt = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
 
 
@@ -128,13 +128,13 @@ class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, attr, random_instance = self.gen_sample(RandomDino, 1000)
-        irt = VCDM(data=y, attr=attr, model='dino', subsample_size=1000)
+        y, q, random_instance = self.gen_sample(RandomDino, 1000)
+        irt = VCDM(data=y, q=q, model='dino', subsample_size=1000)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, attr, random_instance = self.gen_sample(RandomDino, 100000)
-        irt = VaeCDM(data=y, attr=attr, model='dino', subsample_size=100)
+        y, q, random_instance = self.gen_sample(RandomDino, 100000)
+        irt = VaeCDM(data=y, q=q, model='dino', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=10000)
 
 
@@ -144,13 +144,13 @@ class PaDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, attr, random_instance = self.gen_sample(RandomDina, 1500)
-        irt = VCCDM(data=y, attr=attr, model='dina', subsample_size=1500)
+        y, q, random_instance = self.gen_sample(RandomDina, 1500)
+        irt = VCCDM(data=y, q=q, model='dina', subsample_size=1500)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
-        y, attr, random_instance = self.gen_sample(RandomDina, 100000)
-        irt = VaeCCDM(data=y, attr=attr, model='dina', subsample_size=100)
+        y, q, random_instance = self.gen_sample(RandomDina, 100000)
+        irt = VaeCCDM(data=y, q=q, model='dina', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
@@ -160,13 +160,13 @@ class PaDinoTestCase(TestCase, TestMixin, CDMRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, attr, random_instance = self.gen_sample(RandomDino, 1000)
-        irt = VCCDM(data=y, attr=attr, model='dino', subsample_size=1000)
+        y, q, random_instance = self.gen_sample(RandomDino, 1000)
+        irt = VCCDM(data=y, q=q, model='dino', subsample_size=1000)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
-        y, attr, random_instance = self.gen_sample(RandomDino, 100000)
-        irt = VaeCCDM(data=y, attr=attr, model='dino', subsample_size=100)
+        y, q, random_instance = self.gen_sample(RandomDino, 100000)
+        irt = VaeCCDM(data=y, q=q, model='dino', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
@@ -176,11 +176,11 @@ class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, attr, random_instance = self.gen_sample(RandomHoDina, 1000)
-        irt = VCHoDina(data=y, attr=attr, subsample_size=1000)
+        y, q, random_instance = self.gen_sample(RandomHoDina, 1000)
+        irt = VCHoDina(data=y, q=q, subsample_size=1000)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, attr, random_instance = self.gen_sample(RandomHoDina, 100000)
-        irt = VaeCHoDina(data=y, attr=attr, subsample_size=100)
+        y, q, random_instance = self.gen_sample(RandomHoDina, 100000)
+        irt = VaeCHoDina(data=y, q=q, subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))

@@ -12,43 +12,99 @@ from tqdm import trange
 
 
 def irt_1pl(x, b):
+    """
+    单参数IRT模型
+    :param x: 潜变量
+    :param b: 截距
+    :return: 反应概率
+    """
     return torch.sigmoid(x + b)
 
 
 def irt_2pl(x, a, b):
+    """
+    双参数IRT模型
+    :param x: 潜变量
+    :param a: 斜率
+    :param b: 截距
+    :return: 反应概率
+    """
     return torch.sigmoid(x.mm(a) + b)
 
 
 def irt_3pl(x, a, b, c):
+    """
+    三参数IRT模型
+    :param x: 潜变量
+    :param a: 斜率
+    :param b: 截距
+    :param c: 猜测参数
+    :return: 反应概率
+    """
     return c + (1 - c) * irt_2pl(x, a, b)
 
 
 def irt_4pl(x, a, b, c, d):
+    """
+    四参数IRT模型
+    :param x: 潜变量
+    :param a: 斜率
+    :param b: 截距
+    :param c: 猜测参数
+    :param d: 手滑参数
+    :return: 反应概率
+    """
     return c + (d - c) * irt_2pl(x, a, b)
 
 
-def dina(skill, attr, g, s):
-    yita = skill.mm(attr)
-    aa = (attr ** 2).sum(dim=0)
+def dina(attr, q, g, s):
+    """
+    DINA模型
+    :param attr: 属性掌握模式
+    :param q: Q矩阵
+    :param g: 猜测参数
+    :param s: 手滑参数
+    :return:反应概率
+    """
+    yita = attr.mm(q)
+    aa = (q ** 2).sum(dim=0)
     yita[yita < aa] = 0
     yita[yita == aa] = 1
     p = (1 - s) ** yita * g ** (1 - yita)
     return p
 
 
-def dino(skill, attr, g, s):
-    yita = (1 - skill).mm(attr)
-    aa = (attr ** 2).sum(dim=0)
+def dino(attr, q, g, s):
+    """
+    DINO模型
+    :param attr: 属性掌握模式
+    :param q: Q矩阵
+    :param g: 猜测参数
+    :param s: 手滑参数
+    :return: 反应概率
+    """
+    yita = (1 - attr).mm(q)
+    aa = (q ** 2).sum(dim=0)
     yita[yita < aa] = 1
     yita[yita == aa] = 0
     p = (1 - s) ** yita * g ** (1 - yita)
     return p
 
 
-def ho_dina(lam0, lam1, theta, attr, g, s):
-    skill_p = torch.sigmoid(theta.mm(lam1) + lam0)
-    skill = dist.Bernoulli(skill_p).sample()
-    return dina(skill, attr, g, s)
+def ho_dina(lam0, lam1, theta, q, g, s):
+    """
+    HO-DINA模型
+    :param lam0: 截距
+    :param lam1: 斜率
+    :param theta: 潜变量
+    :param q: Q矩阵
+    :param g: 猜测参数
+    :param s: 手滑参数
+    :return: 反应概率
+    """
+    attr_p = torch.sigmoid(theta.mm(lam1) + lam0)
+    attr = dist.Bernoulli(attr_p).sample()
+    return dina(attr, q, g, s)
 
 # ======心理测量模型 end=============
 
@@ -58,57 +114,79 @@ def ho_dina(lam0, lam1, theta, attr, g, s):
 class RandomPsyData(object):
 
     def __init__(self, sample_size=10000, item_size=100):
+        """
+        :param sample_size: 样本量
+        :param item_size: 题量
+        """
         self.item_size = item_size
         self.sample_size = sample_size
 
 
 class RandomDina(RandomPsyData):
-
+    # 生成随机DINA模型数据
     name = 'dina'
 
-    def __init__(self, attr_size=5, attr_p=0.5, skill_p=0.5, *args, **kwargs):
+    def __init__(self, q_size=5, q_p=0.5, attr_p=0.5, *args, **kwargs):
+        """
+        :param q_size: q矩阵的行数
+        :param q_p: q矩阵的二项分布概率
+        :param attr_p: 属性掌握的二项分布概率
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
-        self.attr_size = attr_size
-        self.attr = torch.FloatTensor(attr_size, self.item_size).bernoulli_(attr_p)
-        self.skill = torch.FloatTensor(self.sample_size, attr_size).bernoulli_(skill_p)
+        self.q_size = q_size
+        self.q = torch.FloatTensor(q_size, self.item_size).bernoulli_(q_p)
+        self.attr = torch.FloatTensor(self.sample_size, q_size).bernoulli_(attr_p)
         self.g = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
         self.s = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
 
     @property
     def y(self):
-        p = dina(self.skill, self.attr, self.g, self.s)
+        p = dina(self.attr, self.q, self.g, self.s)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
 class RandomDino(RandomDina):
-
+    # 生成随机DINO模型数据
     name = 'dino'
 
     @property
     def y(self):
-        p = dino(self.skill, self.attr, self.g, self.s)
+        p = dino(self.attr, self.q, self.g, self.s)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
 class RandomHoDina(RandomDina):
-
+    # 生成随机HO-DINA模型数据
     name = 'ho_dina'
 
     def __init__(self, theta_dim=1, theta_local=0, theta_scale=1, lam0_local=0, lam0_scale=1, lam1_lower=0.5,
                  lam1_upper=3, *args, **kwargs):
+        """
+        :param theta_dim: 潜变量维度
+        :param theta_local: 潜变量正态分布的均值
+        :param theta_scale: 潜变量正态分布的标准差
+        :param lam0_local: 截距正态分布的均值
+        :param lam0_scale: 截距正态分布的标准差
+        :param lam1_lower: 斜率均匀分布的下界
+        :param lam1_upper: 斜率均匀分布的上界
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self.theta = torch.FloatTensor(self.sample_size, theta_dim).normal_(theta_local, theta_scale)
-        self.lam0 = torch.FloatTensor(theta_dim, self.attr_size).normal_(lam0_local, lam0_scale)
-        self.lam1 = torch.FloatTensor(theta_dim, self.attr_size).uniform_(lam1_lower, lam1_upper)
+        self.lam0 = torch.FloatTensor(theta_dim, self.q_size).normal_(lam0_local, lam0_scale)
+        self.lam1 = torch.FloatTensor(theta_dim, self.q_size).uniform_(lam1_lower, lam1_upper)
 
     @property
     def y(self):
-        p = ho_dina(self.lam0, self.lam1, self.theta, self.attr, self.g, self.s)
+        p = ho_dina(self.lam0, self.lam1, self.theta, self.q, self.g, self.s)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
 class RandomIrt1PL(RandomPsyData):
-
+    # 生成随机单参数IRT模型数据
     name = 'irt_1pl'
 
     def __init__(
@@ -121,6 +199,15 @@ class RandomIrt1PL(RandomPsyData):
             *args,
             **kwargs
     ):
+        """
+        :param x_feature: 潜变量维度
+        :param x_local: 潜变量正态分布的均值
+        :param x_scale: 潜变量正态分布的标准差
+        :param b_local: 截距正态分布的均值
+        :param b_scale: 截距正态分布的标准差
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self.x_feature = x_feature
         self.x = torch.FloatTensor(self.sample_size, x_feature).normal_(x_local, x_scale)
@@ -133,7 +220,7 @@ class RandomIrt1PL(RandomPsyData):
 
 
 class RandomIrt2PL(RandomIrt1PL):
-
+    # 生成随机双参数IRT模型数据
     name = 'irt_2pl'
 
     def __init__(
@@ -143,6 +230,12 @@ class RandomIrt2PL(RandomIrt1PL):
             *args,
             **kwargs
     ):
+        """
+        :param a_lower: 斜率均匀分布的上界
+        :param a_upper: 斜率均匀分布的下界
+        :param args:
+        :param kwargs:
+        """
         super(RandomIrt2PL, self).__init__(*args, **kwargs)
         self.a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
 
@@ -153,10 +246,16 @@ class RandomIrt2PL(RandomIrt1PL):
 
 
 class RandomIrt3PL(RandomIrt2PL):
-
+    # 生成随机三参数IRT模型数据
     name = 'irt_3pl'
 
     def __init__(self, c_unif_lower=0.05, c_unif_upper=0.2, *args, **kwargs):
+        """
+        :param c_unif_lower: 猜测参数均匀分布的下界
+        :param c_unif_upper: 猜测参数均匀分布的上界
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self.c = torch.FloatTensor(1, self.item_size).uniform_(c_unif_lower, c_unif_upper)
 
@@ -167,10 +266,16 @@ class RandomIrt3PL(RandomIrt2PL):
 
 
 class RandomIrt4PL(RandomIrt3PL):
-
+    # 生成随机四参数IRT模型数据
     name = 'irt_4pl'
 
     def __init__(self, d_unif_lower=0.8, d_unif_upper=0.95, *args, **kwargs):
+        """
+        :param d_unif_lower: 手滑参数均匀分布的下界
+        :param d_unif_upper: 手滑参数均匀分布的上界
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self.d = torch.FloatTensor(1, self.item_size).uniform_(d_unif_lower, d_unif_upper)
 
@@ -235,6 +340,10 @@ class SoftmaxEncoder(nn.Module):
 class BasePsy(nn.Module):
 
     def __init__(self, data, subsample_size=None):
+        """
+        :param data: 作答反应矩阵
+        :param subsample_size: mini-batch 样本数
+        """
         super().__init__()
         self.data = data
         self.sample_size = data.size(0)
@@ -299,7 +408,7 @@ class BaseIRT(BasePsy):
 
 
 class VaeIRT(BaseIRT):
-
+    # 基于变分自编码器的IRT参数估计
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
@@ -314,7 +423,7 @@ class VaeIRT(BaseIRT):
 
 
 class VIRT(BaseIRT):
-
+    # 基于黑盒变分推断的IRT参数估计
     def guide(self, data):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
@@ -331,10 +440,10 @@ class BaseCDM(BasePsy):
         'dino': dino
     }
 
-    def __init__(self, attr, model='dina', *args, **kwargs):
+    def __init__(self, q, model='dina', *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.attr = attr
-        self.skill_size = attr.size(0)
+        self.q = q
+        self.attr_size = q.size(0)
         self._model = model
 
     def model(self, data):
@@ -343,11 +452,11 @@ class BaseCDM(BasePsy):
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         with pyro.plate("data", sample_size) as ind:
-            skill = pyro.sample(
-                'skill',
-                dist.Bernoulli(torch.zeros((len(ind), self.skill_size)) + 0.5).to_event(1)
+            attr = pyro.sample(
+                'attr',
+                dist.Bernoulli(torch.zeros((len(ind), self.attr_size)) + 0.5).to_event(1)
             )
-            p = self.CDM_FUN[self._model](skill, self.attr, g, s)
+            p = self.CDM_FUN[self._model](attr, self.q, g, s)
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
 
     def fit(self, optim=Adam({'lr': 1e-3}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
@@ -370,42 +479,43 @@ class BaseCDM(BasePsy):
 
 
 class VaeCDM(BaseCDM):
+    # 基于变分自编码器的CDM参数估计
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.encoder = BinEncoder(self.item_size, self.skill_size, hidden_dim)
+        self.encoder = BinEncoder(self.item_size, self.attr_size, hidden_dim)
 
     def guide(self, data):
         sample_size = self.sample_size
         pyro.module('encoder', self.encoder)
         with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
-            skill_p = self.encoder.forward(data[idx])
+            attr_p = self.encoder.forward(data[idx])
             pyro.sample(
-                'skill',
-                dist.Bernoulli(skill_p).to_event(1)
+                'attr',
+                dist.Bernoulli(attr_p).to_event(1)
             )
 
 
 class VCDM(BaseCDM):
-
+    # 基于黑盒变分推断的CDM参数估计
     def guide(self, data):
         sample_size = self.sample_size
-        skill_p = pyro.param('skill_p', torch.zeros((sample_size, self.skill_size)) + 0.5, constraint=constraints.unit_interval)
+        attr_p = pyro.param('attr_p', torch.zeros((sample_size, self.attr_size)) + 0.5, constraint=constraints.unit_interval)
         with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
             pyro.sample(
-                'skill',
-                dist.Bernoulli(skill_p[idx]).to_event(1)
+                'attr',
+                dist.Bernoulli(attr_p[idx]).to_event(1)
             )
 
 
 class VCCDM(BaseCDM):
-
+    # 基于离散潜变量黑盒变分推断的CDM参数估计，效果绝佳
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.all_skill = self.get_all_skills()
+        self.all_attr = self.get_all_attrs()
 
-    def get_all_skills(self):
-        row_size = 2 ** self.skill_size
-        all_skill = torch.zeros((row_size, self.skill_size))
+    def get_all_attrs(self):
+        row_size = 2 ** self.attr_size
+        all_attr = torch.zeros((row_size, self.attr_size))
         for i in range(row_size):
             num = i
             count = 0
@@ -413,9 +523,9 @@ class VCCDM(BaseCDM):
                 if num == 0:
                     break
                 num, rem = divmod(num, 2)
-                all_skill[i][count] = rem
+                all_attr[i][count] = rem
                 count += 1
-        return all_skill
+        return all_attr
 
     @config_enumerate
     def model(self, data):
@@ -423,13 +533,13 @@ class VCCDM(BaseCDM):
         sample_size = self.sample_size
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
-        all_p = self.CDM_FUN[self._model](self.all_skill, self.attr, g, s)
+        all_p = self.CDM_FUN[self._model](self.all_attr, self.q, g, s)
         with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
-            skill_idx = pyro.sample(
-                'skill_idx',
-                dist.Categorical(torch.zeros((len(idx), self.all_skill.size(0))) + 1 / self.all_skill.size(0)).to_event(0)
+            attr_idx = pyro.sample(
+                'attr_idx',
+                dist.Categorical(torch.zeros((len(idx), self.all_attr.size(0))) + 1 / self.all_attr.size(0)).to_event(0)
             )
-            p = all_p[skill_idx]
+            p = all_p[attr_idx]
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[idx])
 
     def guide(self, data):
@@ -440,10 +550,10 @@ class VCCDM(BaseCDM):
 
 
 class VaeCCDM(VCCDM):
-
+    # 基于离散潜变量变分自编码器的CDM参数估计，效果绝佳
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.encoder = SoftmaxEncoder(self.item_size, self.all_skill.size(0), hidden_dim)
+        self.encoder = SoftmaxEncoder(self.item_size, self.all_attr.size(0), hidden_dim)
 
     @config_enumerate
     def model(self, data):
@@ -452,22 +562,19 @@ class VaeCCDM(VCCDM):
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         pyro.module('encoder', self.encoder)
-        all_p = self.CDM_FUN[self._model](self.all_skill, self.attr, g, s)
+        all_p = self.CDM_FUN[self._model](self.all_attr, self.q, g, s)
         with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
-            skill_p = self.encoder.forward(data[idx])
-            skill_idx = pyro.sample(
-                'skill_idx',
-                dist.Categorical(skill_p).to_event(0)
+            attr_p = self.encoder.forward(data[idx])
+            attr_idx = pyro.sample(
+                'attr_idx',
+                dist.Categorical(attr_p).to_event(0)
             )
-            p = all_p[skill_idx]
+            p = all_p[attr_idx]
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[idx])
 
 
 class VCHoDina(VCCDM):
-
-    def __init__(self, hidden_dim=64, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
+    # 基于离散潜变量黑盒变分推断的HO-DINA参数估计，效果绝佳
 
     @config_enumerate
     def model(self, data):
@@ -477,19 +584,19 @@ class VCHoDina(VCCDM):
         lam1 = pyro.param('lam1', torch.ones((1, 5)), constraint=constraints.positive)
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
-        all_p = dina(self.all_skill, self.attr, g, s)
+        all_p = dina(self.all_attr, self.q, g, s)
         with pyro.plate("data", sample_size) as ind:
             theta = pyro.sample(
                 'theta',
                 dist.Normal(torch.zeros((len(ind), 1)), torch.ones((len(ind), 1))).to_event(1)
             )
-            skill_p = torch.sigmoid(theta.mm(lam1) + lam0)
-            likelihood_skill_p = torch.exp(torch.log(skill_p).mm(self.all_skill.T) + torch.log(1 - skill_p).mm(1 - self.all_skill.T))
-            skill_idx = pyro.sample(
-                'skill_idx',
-                dist.Categorical(likelihood_skill_p).to_event(0)
+            attr_p = torch.sigmoid(theta.mm(lam1) + lam0)
+            likelihood_attr_p = torch.exp(torch.log(attr_p).mm(self.all_attr.T) + torch.log(1 - attr_p).mm(1 - self.all_attr.T))
+            attr_idx = pyro.sample(
+                'attr_idx',
+                dist.Categorical(likelihood_attr_p).to_event(0)
             )
-            p = all_p[skill_idx]
+            p = all_p[attr_idx]
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
 
     def guide(self, data):
@@ -527,6 +634,11 @@ class VCHoDina(VCCDM):
 
 
 class VaeCHoDina(VCHoDina):
+    # 基于离散潜变量变分自编码器的HO-DINA参数估计，效果绝佳
+
+    def __init__(self, hidden_dim=64, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
 
     def guide(self, data):
         sample_size = self.sample_size
