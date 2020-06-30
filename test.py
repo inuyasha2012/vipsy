@@ -35,13 +35,13 @@ class Irt1PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt1PL, 1000)
-        irt = VIRT(data=y, model='irt_1pl', subsample_size=1000)
-        irt.fit(random_instance=random_instance)
+        model = VIRT(data=y, model='irt_1pl', subsample_size=1000)
+        model.fit(random_instance=random_instance)
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt1PL, 100000)
-        irt = VaeIRT(data=y, model='irt_1pl', subsample_size=100)
-        irt.fit(random_instance=random_instance)
+        model = VaeIRT(data=y, model='irt_1pl', subsample_size=100)
+        model.fit(random_instance=random_instance)
 
 
 class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -51,13 +51,13 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
-        irt = VIRT(data=y, model='irt_2pl')
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+        model = VIRT(data=y, model='irt_2pl')
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
-        irt = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -67,13 +67,13 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt3PL, 1000)
-        irt = VIRT(data=y, model='irt_3pl', subsample_size=1000)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}), max_iter=50000)
+        model = VIRT(data=y, model='irt_3pl', subsample_size=1000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}), max_iter=50000)
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt3PL, 1000000)
-        irt = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
+        model = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
 
 
 class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -83,13 +83,13 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt4PL, 1000)
-        irt = VIRT(data=y, model='irt_4pl', subsample_size=1000)
-        irt.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 5e-3}))
+        model = VIRT(data=y, model='irt_4pl', subsample_size=1000)
+        model.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 5e-3}))
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt4PL, 100000)
-        irt = VaeIRT(data=y, model='irt_4pl', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
+        model = VaeIRT(data=y, model='irt_4pl', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
 
 
 class CDMRandomMixin(object):
@@ -113,13 +113,13 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDina, 1000)
-        irt = VCDM(data=y, q=q, model='dina', subsample_size=1000)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+        model = VCDM(data=y, q=q, model='dina', subsample_size=1000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDina, 100000)
-        irt = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
+        model = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
 
 
 class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -129,13 +129,13 @@ class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDino, 1000)
-        irt = VCDM(data=y, q=q, model='dino', subsample_size=1000)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+        model = VCDM(data=y, q=q, model='dino', subsample_size=1000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDino, 100000)
-        irt = VaeCDM(data=y, q=q, model='dino', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=10000)
+        model = VaeCDM(data=y, q=q, model='dino', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=10000)
 
 
 class PaDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -145,13 +145,13 @@ class PaDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDina, 1500)
-        irt = VCCDM(data=y, q=q, model='dina', subsample_size=1500)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model = VCCDM(data=y, q=q, model='dina', subsample_size=1500)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDina, 100000)
-        irt = VaeCCDM(data=y, q=q, model='dina', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model = VaeCCDM(data=y, q=q, model='dina', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
 class PaDinoTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -161,13 +161,13 @@ class PaDinoTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDino, 1000)
-        irt = VCCDM(data=y, q=q, model='dino', subsample_size=1000)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model = VCCDM(data=y, q=q, model='dino', subsample_size=1000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDino, 100000)
-        irt = VaeCCDM(data=y, q=q, model='dino', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model = VaeCCDM(data=y, q=q, model='dino', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
 class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -177,10 +177,10 @@ class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomHoDina, 1000)
-        irt = VCHoDina(data=y, q=q, subsample_size=1000)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+        model = VCHoDina(data=y, q=q, subsample_size=1000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomHoDina, 100000)
-        irt = VaeCHoDina(data=y, q=q, subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
+        model = VaeCHoDina(data=y, q=q, subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
