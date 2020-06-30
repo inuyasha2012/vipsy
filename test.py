@@ -5,7 +5,7 @@ from pyro.optim import Adam
 import torch
 
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
-    VaeIRT, VIRT, VCDM, VHOCDM, VaeCDM
+    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
 
 
 class TestMixin(object):
@@ -50,7 +50,7 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 100)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
         irt = VIRT(data=y, model='irt_2pl')
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
@@ -98,6 +98,8 @@ class CDMRandomMixin(object):
         random_instance = random_class(sample_size=sample_size)
         y = random_instance.y
         attr = random_instance.attr
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_attr.txt', attr.numpy())
         if self.cuda:
             y = y.cuda()
             attr = attr.cuda()
@@ -115,12 +117,9 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        # y, attr, random_instance = self.gen_sample(RandomDina, 100000)
-        random_instance = RandomHoDina(sample_size=100000)
-        y = random_instance.y
-        attr = random_instance.attr
+        y, attr, random_instance = self.gen_sample(RandomDina, 100000)
         irt = VaeCDM(data=y, attr=attr, model='dina', subsample_size=100)
-        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
 
 
 class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -137,3 +136,51 @@ class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
         y, attr, random_instance = self.gen_sample(RandomDino, 100000)
         irt = VaeCDM(data=y, attr=attr, model='dino', subsample_size=100)
         irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=10000)
+
+
+class PaDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
+
+    def setUp(self):
+        self.prepare_cuda()
+
+    def test_bbvi(self):
+        y, attr, random_instance = self.gen_sample(RandomDina, 1500)
+        irt = VCCDM(data=y, attr=attr, model='dina', subsample_size=1500)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+    def test_ai(self):
+        y, attr, random_instance = self.gen_sample(RandomDina, 100000)
+        irt = VaeCCDM(data=y, attr=attr, model='dina', subsample_size=100)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+
+class PaDinoTestCase(TestCase, TestMixin, CDMRandomMixin):
+
+    def setUp(self):
+        self.prepare_cuda()
+
+    def test_bbvi(self):
+        y, attr, random_instance = self.gen_sample(RandomDino, 1000)
+        irt = VCCDM(data=y, attr=attr, model='dino', subsample_size=1000)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+    def test_ai(self):
+        y, attr, random_instance = self.gen_sample(RandomDino, 100000)
+        irt = VaeCCDM(data=y, attr=attr, model='dino', subsample_size=100)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+
+class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
+
+    def setUp(self):
+        self.prepare_cuda()
+
+    def test_bbvi(self):
+        y, attr, random_instance = self.gen_sample(RandomHoDina, 1000)
+        irt = VCHoDina(data=y, attr=attr, subsample_size=1000)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+
+    def test_ai(self):
+        y, attr, random_instance = self.gen_sample(RandomHoDina, 100000)
+        irt = VaeCHoDina(data=y, attr=attr, subsample_size=100)
+        irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
