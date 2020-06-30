@@ -3,6 +3,8 @@ virt是《变分推断在计量心理模型中的应用(variational inference fo
 
 斯坦福大学的项目[variational-item-response-theory-public](https://github.com/mhw32/variational-item-response-theory-public)结果无法重现，不知道是调参问题还是什么原因，并且斯坦福大学项目的问题还蛮多的，遂重新开发了基于变分推断的项目反应理论参数估计代码，并且加入了基于变分推断的认知诊断模型参数估计代码。
 
+本项目虽有拾人牙慧的嫌疑，但作者碍于职称评定压力，不得不灌水发论文，实乃无奈之举，当然，本项目和之前的诸多变分推断R包和python库，还是有区别的。
+
 与其他（包括斯坦福的项目）基于变分推断的心理测量模型参数估计库（包）不同，本项目的模型不是全贝叶斯模型，是频率学派的心理测量模型。
 
 # 与已有库（包）的区别
@@ -105,4 +107,4 @@ y, q, random_instance = gen_cdm_sample(RandomHoDina, 100000)
 irt = VaeCHoDina(data=y, q=q, subsample_size=100)
 irt.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
 ```
-更多测试用例详见测试文件
+更多测试用例详见[测试文件](https://github.com/inuyasha2012/virt/blob/master/test.py)
