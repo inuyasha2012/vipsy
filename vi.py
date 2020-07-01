@@ -3,7 +3,8 @@ import torch.distributions
 import pyro
 from pyro import distributions as dist
 from pyro.distributions import constraints
-from pyro.infer import SVI, Trace_ELBO, config_enumerate, TraceEnum_ELBO
+from pyro.infer import SVI, Trace_ELBO, config_enumerate, TraceEnum_ELBO, TraceMeanField_ELBO, TraceGraph_ELBO
+from pyro.infer.autoguide import AutoMultivariateNormal, AutoNormal, AutoDiagonalNormal
 from pyro.optim import Adam
 from torch import nn
 from tqdm import trange
@@ -21,9 +22,10 @@ def irt_1pl(x, b):
     return torch.sigmoid(x + b)
 
 
-def irt_2pl(x, a, b):
+def irt_2pl(x, a, b, mask=1):
     """
     双参数IRT模型
+    :param mask:  mask
     :param x: 潜变量
     :param a: 斜率
     :param b: 截距
@@ -115,7 +117,7 @@ def ho_dina(lam0, lam1, theta, q, g, s):
 
 class RandomPsyData(object):
 
-    def __init__(self, sample_size=10000, item_size=100):
+    def __init__(self, sample_size=10000, item_size=100, *args, **kwargs):
         """
         :param sample_size: 样本量
         :param item_size: 题量
@@ -239,8 +241,11 @@ class RandomIrt2PL(RandomIrt1PL):
         :param kwargs:
         """
         super(RandomIrt2PL, self).__init__(*args, **kwargs)
-        self.a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
+        mask = kwargs.get('mask', 1)
+        a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
+        self.a = a * mask
         self.a[-1, -1] = 0
+        self.a[1, :5] = 0
 
     @property
     def y(self):
@@ -342,7 +347,7 @@ class SoftmaxEncoder(nn.Module):
 
 class BasePsy(nn.Module):
 
-    def __init__(self, data, subsample_size=None):
+    def __init__(self, data, subsample_size=None, **kwargs):
         """
         :param data: 作答反应矩阵
         :param subsample_size: mini-batch 样本数
@@ -367,27 +372,28 @@ class BaseIRT(BasePsy):
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature
+        self.mask = kwargs.get('mask', 1)
 
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
-        irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size)))}
+        irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size))), 'mask': self.mask}
         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
-            a = torch.ones((self.x_feature, item_size))
+            a = torch.ones((self.x_feature, item_size)) * self.mask
             a[-1, -1] = 0
-            irt_param_kwargs['a'] = pyro.param('a', a)
+            irt_param_kwargs['a'] = pyro.param('a', a, constraint=constraints.positive)
         if self._model in ('irt_3pl', 'irt_4pl'):
             irt_param_kwargs['c'] = pyro.param('c', torch.zeros((1, item_size)))
         if self._model == 'irt_4pl':
             irt_param_kwargs['d'] = pyro.param('d', torch.ones((1, item_size)))
-        with pyro.plate("data", sample_size) as ind:
+        with pyro.plate("data", sample_size, dim=-2) as ind:
             irt_param_kwargs['x'] = pyro.sample(
                 'x',
-                dist.Normal(torch.zeros((len(ind), self.x_feature)), torch.ones((len(ind), self.x_feature))).to_event(1)
+                dist.Normal(torch.zeros((len(ind), self.x_feature)), torch.ones((len(ind), self.x_feature)))
             )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
+            pyro.sample('y', dist.Bernoulli(p), obs=data[ind])
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
@@ -399,16 +405,16 @@ class BaseIRT(BasePsy):
                     postfix_kwargs = {}
                     if random_instance is not None:
                         b = pyro.param('b')
-                        postfix_kwargs['threshold_error'] = '{0}'.format((b - random_instance.b).abs().mean())
+                        postfix_kwargs['threshold_error'] = '{0}'.format((b - random_instance.b).pow(2).sqrt().mean())
                         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
                             a = pyro.param('a')
-                            postfix_kwargs['slop_error'] = '{0}'.format((a - random_instance.a).abs().mean())
+                            postfix_kwargs['slop_error'] = '{0}'.format((a - random_instance.a).pow(2).sqrt().mean())
                         if self._model in ('irt_3pl', 'irt_4pl'):
                             c = pyro.param('c')
-                            postfix_kwargs['guess_error'] = '{0}'.format((c - random_instance.c).abs().mean())
+                            postfix_kwargs['guess_error'] = '{0}'.format((c - random_instance.c).pow(2).sqrt().mean())
                         if self._model == 'irt_4pl':
                             d = pyro.param('d')
-                            postfix_kwargs['slip_error'] = '{0}'.format((d - random_instance.d).abs().mean())
+                            postfix_kwargs['slip_error'] = '{0}'.format((d - random_instance.d).pow(2).sqrt().mean())
                     t.set_postfix(loss=loss, **postfix_kwargs)
 
 
@@ -416,15 +422,15 @@ class VaeIRT(BaseIRT):
     # 基于变分自编码器的IRT参数估计
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
+        self.encoder = NormEncoder(self.item_size, self.x_feature, hidden_dim)
 
     def guide(self, data):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
-        with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
+        with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
             x_local, x_scale = self.encoder.forward(data[idx])
-            pyro.sample('x', dist.Normal(x_local, x_scale).to_event(1))
+            pyro.sample('x', dist.Normal(x_local, x_scale))
 
 
 class VIRT(BaseIRT):
@@ -434,8 +440,8 @@ class VIRT(BaseIRT):
         subsample_size = self.subsample_size
         x_local = pyro.param('x_local', torch.zeros((sample_size, self.x_feature)))
         x_scale = pyro.param('x_scale', torch.ones((sample_size, self.x_feature)), constraint=constraints.positive)
-        with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
-            pyro.sample('x', dist.Normal(x_local[idx], x_scale[idx]).to_event(1))
+        with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
+            pyro.sample('x', dist.Normal(x_local[idx], x_scale[idx]))
 
 
 class BaseCDM(BasePsy):

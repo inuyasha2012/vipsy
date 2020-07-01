@@ -66,14 +66,18 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2, item_size=10, a_lower=1.5, a_upper=2.5)
+        # y_ = np.loadtxt('lsat.dat')
+        # y = torch.from_numpy(y_)
         model = VIRT(data=y, model='irt_2pl', x_feature=2)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+        model.fit(optim=Adam({'lr': 1e-2}), max_iter=50000, random_instance=random_instance)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
-        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        y, random_instance = self.gen_sample(RandomIrt2PL, 100000, x_feature=2, item_size=10)
+        # y_ = np.loadtxt('lsat.dat')
+        # y = torch.from_numpy(y_).float()
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=2)
+        model.fit(optim=Adam({'lr': 5e-3}), max_iter=50000, random_instance=random_instance)
 
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
