@@ -1,3 +1,5 @@
+from math import nan
+
 import torch
 import torch.distributions
 import pyro
@@ -244,8 +246,6 @@ class RandomIrt2PL(RandomIrt1PL):
         mask = kwargs.get('mask', 1)
         a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
         self.a = a * mask
-        self.a[-1, -1] = 0
-        self.a[1, :5] = 0
 
     @property
     def y(self):
@@ -306,8 +306,8 @@ class NormEncoder(nn.Module):
         self.fc22 = nn.Linear(hidden_dim, x_dim)
         self.softplus = nn.Softplus()
 
-    def forward(self, x):
-        hidden = self.softplus(self.fc1(x))
+    def forward(self, x, mask):
+        hidden = self.softplus(self.fc1(x * mask))
         x_loc = self.fc21(hidden)
         x_scale = torch.exp(self.fc22(hidden))
         return x_loc, x_scale
@@ -373,6 +373,11 @@ class BaseIRT(BasePsy):
         self._model = model
         self.x_feature = x_feature
         self.mask = kwargs.get('mask', 1)
+        if x_feature > 1 and self.mask == 1:
+            self.mask = torch.ones((x_feature, self.item_size))
+            for i in range(x_feature):
+                self.mask[i, self.item_size-i:] = 0
+
 
     def model(self, data):
         item_size = self.item_size
@@ -380,7 +385,6 @@ class BaseIRT(BasePsy):
         irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size))), 'mask': self.mask}
         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
             a = torch.ones((self.x_feature, item_size)) * self.mask
-            a[-1, -1] = 0
             irt_param_kwargs['a'] = pyro.param('a', a, constraint=constraints.positive)
         if self._model in ('irt_3pl', 'irt_4pl'):
             irt_param_kwargs['c'] = pyro.param('c', torch.zeros((1, item_size)))
@@ -393,7 +397,11 @@ class BaseIRT(BasePsy):
             )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
-            pyro.sample('y', dist.Bernoulli(p), obs=data[ind])
+            obs_mask = torch.ones_like(data[ind])
+            obs_mask[data[ind] == -1] = 0
+            p_new = p * obs_mask
+            data_new = data[ind] * obs_mask
+            pyro.sample('y', dist.Bernoulli(p_new), obs=data_new)
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
@@ -429,7 +437,9 @@ class VaeIRT(BaseIRT):
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
         with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
-            x_local, x_scale = self.encoder.forward(data[idx])
+            data_mask = torch.ones_like(data[idx])
+            data_mask[data[idx] == -1] = 0
+            x_local, x_scale = self.encoder.forward(data[idx], data_mask)
             pyro.sample('x', dist.Normal(x_local, x_scale))
 
 

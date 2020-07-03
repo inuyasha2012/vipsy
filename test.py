@@ -1,8 +1,10 @@
+from math import nan
 from unittest import TestCase
 
 import numpy as np
 from pyro.optim import Adam
 import torch
+from sklearn.impute import KNNImputer
 
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
@@ -60,22 +62,51 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
+class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
+    # 缺失数据下的变分推断
+
+    def setUp(self):
+        self.prepare_cuda()
+
+    def gen_missing_y(self, sample_size=1000, missing_rate=0.1, *args, **kwargs):
+        row_y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, *args, **kwargs)
+        y_size = row_y.size(0) * row_y.size(1)
+        row_idx = torch.randint(0, row_y.size(0), (int(y_size * missing_rate),))
+        col_idx = torch.randint(0, row_y.size(1), (int(y_size * missing_rate),))
+        row_y[row_idx, col_idx] = -1
+        # imputer = KNNImputer(n_neighbors=5, weights="uniform")
+        # y_ = imputer.fit_transform(row_y.numpy())
+        # return torch.from_numpy(y_), random_instance
+        return row_y, random_instance
+
+    def test_bbvi(self):
+        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0, item_size=10)
+        model = VIRT(data=y, model='irt_2pl', subsample_size=1000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+    def test_ai(self):
+        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0.1, item_size=10)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+
+
 class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
+    # 多维项目反应理论
 
     def setUp(self):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2, item_size=10, a_lower=1.5, a_upper=2.5)
-        # y_ = np.loadtxt('lsat.dat')
-        # y = torch.from_numpy(y_)
-        model = VIRT(data=y, model='irt_2pl', x_feature=2)
+        mask = torch.ones((2, 10))
+        y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2, item_size=10, a_lower=1.5, a_upper=2.5,
+                                             mask=mask)
+        model = VIRT(data=y, model='irt_2pl', x_feature=3)
         model.fit(optim=Adam({'lr': 1e-2}), max_iter=50000, random_instance=random_instance)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 100000, x_feature=2, item_size=10)
-        # y_ = np.loadtxt('lsat.dat')
-        # y = torch.from_numpy(y_).float()
+        mask = torch.ones((2, 10))
+        mask[-1, -5:] = 0
+        y, random_instance = self.gen_sample(RandomIrt2PL, 100000, x_feature=2, item_size=10, mask=mask)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=2)
         model.fit(optim=Adam({'lr': 5e-3}), max_iter=50000, random_instance=random_instance)
 
