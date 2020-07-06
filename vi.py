@@ -3,11 +3,13 @@ from math import nan
 import torch
 import torch.distributions
 import pyro
-from pyro import distributions as dist
+from pyro import distributions as dist, poutine
 from pyro.distributions import constraints
-from pyro.infer import SVI, Trace_ELBO, config_enumerate, TraceEnum_ELBO, TraceMeanField_ELBO, TraceGraph_ELBO
-from pyro.infer.autoguide import AutoMultivariateNormal, AutoNormal, AutoDiagonalNormal
+from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO
+from pyro.infer.autoguide import AutoMultivariateNormal
+from pyro.infer.util import torch_item
 from pyro.optim import Adam
+from pyro.poutine.messenger import Messenger
 from torch import nn
 from tqdm import trange
 
@@ -24,18 +26,15 @@ def irt_1pl(x, b):
     return torch.sigmoid(x + b)
 
 
-def irt_2pl(x, a, b, mask=1):
+def irt_2pl(x, a, b):
     """
     双参数IRT模型
-    :param mask:  mask
     :param x: 潜变量
     :param a: 斜率
     :param b: 截距
     :return: 反应概率
     """
-    mask = torch.ones_like(a)
-    mask[-1, -1] = 0
-    return torch.sigmoid(x.mm(a * mask) + b)
+    return torch.sigmoid(x.mm(a) + b)
 
 
 def irt_3pl(x, a, b, c):
@@ -243,9 +242,7 @@ class RandomIrt2PL(RandomIrt1PL):
         :param kwargs:
         """
         super(RandomIrt2PL, self).__init__(*args, **kwargs)
-        mask = kwargs.get('mask', 1)
-        a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
-        self.a = a * mask
+        self.a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
 
     @property
     def y(self):
@@ -344,6 +341,35 @@ class SoftmaxEncoder(nn.Module):
 
 # ======深度生成模型 end=============
 
+# ======参数约束 start==============
+
+class FixedMessenger(Messenger):
+    def __init__(self, fixed):
+        super().__init__()
+        self.fixed = fixed
+
+    def _process_message(self, msg):
+        msg["fixed"] = self.fixed if msg.get("fixed") is None else self.fixed & msg["fixed"]
+        return None
+
+
+class SVI(SVI_):
+
+    def step(self, *args, **kwargs):
+        with poutine.trace(param_only=True) as param_capture:
+            loss = self.loss_and_grads(self.model, self.guide, *args, **kwargs)
+        params = []
+        for site in param_capture.trace.nodes.values():
+            param = site["value"].unconstrained()
+            if site.get('fixed') is not None:
+                param.grad = site['fixed'] * param.grad
+            params.append(param)
+        self.optim(params)
+        pyro.infer.util.zero_grads(params)
+        return torch_item(loss)
+
+# ======参数约束 end==============
+
 
 class BasePsy(nn.Module):
 
@@ -357,6 +383,7 @@ class BasePsy(nn.Module):
         self.sample_size = data.size(0)
         self.item_size = data.size(1)
         self.subsample_size = subsample_size if subsample_size is not None else self.sample_size
+        self.kwargs = kwargs
 
 
 class BaseIRT(BasePsy):
@@ -372,20 +399,20 @@ class BaseIRT(BasePsy):
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature
-        self.mask = kwargs.get('mask', 1)
-        if x_feature > 1 and self.mask == 1:
-            self.mask = torch.ones((x_feature, self.item_size))
+        self.a_fixed = kwargs.get('a_fixed')
+        if x_feature > 1 and self.a_fixed is None:
+            self.a0 = kwargs.get('a0', torch.ones((self.x_feature, self.item_size)))
+            self.a_fixed = torch.BoolTensor(x_feature, self.item_size).fill_(True)
             for i in range(x_feature):
-                self.mask[i, self.item_size-i:] = 0
-
+                self.a_fixed[i, self.item_size-i:] = False
 
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
-        irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size))), 'mask': self.mask}
+        irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size)))}
         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
-            a = torch.ones((self.x_feature, item_size)) * self.mask
-            irt_param_kwargs['a'] = pyro.param('a', a, constraint=constraints.positive)
+            with FixedMessenger(fixed=self.a_fixed):
+                irt_param_kwargs['a'] = pyro.param('a', self.a0, constraint=constraints.positive)
         if self._model in ('irt_3pl', 'irt_4pl'):
             irt_param_kwargs['c'] = pyro.param('c', torch.zeros((1, item_size)))
         if self._model == 'irt_4pl':

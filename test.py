@@ -100,7 +100,7 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         mask = torch.ones((2, 10))
         y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2, item_size=10, a_lower=1.5, a_upper=2.5,
                                              mask=mask)
-        model = VIRT(data=y, model='irt_2pl', x_feature=3)
+        model = VIRT(data=y, model='irt_2pl', x_feature=2)
         model.fit(optim=Adam({'lr': 1e-2}), max_iter=50000, random_instance=random_instance)
 
     def test_ai(self):
