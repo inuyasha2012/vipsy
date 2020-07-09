@@ -303,8 +303,8 @@ class NormEncoder(nn.Module):
         self.fc22 = nn.Linear(hidden_dim, x_dim)
         self.softplus = nn.Softplus()
 
-    def forward(self, x, mask):
-        hidden = self.softplus(self.fc1(x * mask))
+    def forward(self, x):
+        hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
         x_scale = torch.exp(self.fc22(hidden))
         return x_loc, x_scale
@@ -400,8 +400,8 @@ class BaseIRT(BasePsy):
         self._model = model
         self.x_feature = x_feature
         self.a_fixed = kwargs.get('a_fixed')
+        self.a0 = kwargs.get('a0', torch.ones((self.x_feature, self.item_size)))
         if x_feature > 1 and self.a_fixed is None:
-            self.a0 = kwargs.get('a0', torch.ones((self.x_feature, self.item_size)))
             self.a_fixed = torch.BoolTensor(x_feature, self.item_size).fill_(True)
             for i in range(x_feature):
                 self.a_fixed[i, self.item_size-i:] = False
@@ -424,11 +424,12 @@ class BaseIRT(BasePsy):
             )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
-            obs_mask = torch.ones_like(data[ind])
-            obs_mask[data[ind] == -1] = 0
-            p_new = p * obs_mask
-            data_new = data[ind] * obs_mask
-            pyro.sample('y', dist.Bernoulli(p_new), obs=data_new)
+            data_ = data[ind]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
+                p = torch.where(data_nan, torch.full_like(p, 0), p)
+            pyro.sample('y', dist.Bernoulli(p), obs=data_)
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
@@ -464,9 +465,11 @@ class VaeIRT(BaseIRT):
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
         with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
-            data_mask = torch.ones_like(data[idx])
-            data_mask[data[idx] == -1] = 0
-            x_local, x_scale = self.encoder.forward(data[idx], data_mask)
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+            x_local, x_scale = self.encoder.forward(data_)
             pyro.sample('x', dist.Normal(x_local, x_scale))
 
 

@@ -52,9 +52,9 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 10000)
         model = VIRT(data=y, model='irt_2pl')
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
@@ -68,26 +68,27 @@ class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
     def setUp(self):
         self.prepare_cuda()
 
-    def gen_missing_y(self, sample_size=1000, missing_rate=0.1, *args, **kwargs):
-        row_y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, *args, **kwargs)
+    def gen_missing_y(self, sample_size=1000, missing_rate=0.1, **kwargs):
+        row_y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, **kwargs)
         y_size = row_y.size(0) * row_y.size(1)
-        row_idx = torch.randint(0, row_y.size(0), (int(y_size * missing_rate),))
+        # row_idx = torch.randint(0, row_y.size(0), (int(y_size * missing_rate),))
+        row_idx = torch.arange(0, row_y.size(0)).repeat(int(row_y.size(1) * missing_rate))
         col_idx = torch.randint(0, row_y.size(1), (int(y_size * missing_rate),))
-        row_y[row_idx, col_idx] = -1
+        row_y[row_idx, col_idx] = nan
         # imputer = KNNImputer(n_neighbors=5, weights="uniform")
         # y_ = imputer.fit_transform(row_y.numpy())
         # return torch.from_numpy(y_), random_instance
         return row_y, random_instance
 
     def test_bbvi(self):
-        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0, item_size=10)
-        model = VIRT(data=y, model='irt_2pl', subsample_size=1000)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        y, random_instance = self.gen_missing_y(sample_size=10000, missing_rate=0.1, item_size=100)
+        model = VIRT(data=y, model='irt_2pl', subsample_size=10000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0.1, item_size=10)
+        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0.5, item_size=1000)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 2e-3}), max_iter=100000)
 
 
 class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
