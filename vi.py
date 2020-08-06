@@ -5,12 +5,13 @@ import torch.distributions
 import pyro
 from pyro import distributions as dist, poutine
 from pyro.distributions import constraints
-from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO
-from pyro.infer.autoguide import AutoMultivariateNormal
+from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO, TraceMeanField_ELBO, TraceGraph_ELBO
+from pyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
 from pyro.infer.util import torch_item
 from pyro.optim import Adam
 from pyro.poutine.messenger import Messenger
 from torch import nn
+from torch.nn import init
 from tqdm import trange
 
 # ======心理测量模型 start=============
@@ -343,13 +344,13 @@ class SoftmaxEncoder(nn.Module):
 
 # ======参数约束 start==============
 
-class FixedMessenger(Messenger):
-    def __init__(self, fixed):
+class FreeMessenger(Messenger):
+    def __init__(self, free):
         super().__init__()
-        self.fixed = fixed
+        self.free = free
 
     def _process_message(self, msg):
-        msg["fixed"] = self.fixed if msg.get("fixed") is None else self.fixed & msg["fixed"]
+        msg["free"] = self.free if msg.get("free") is None else self.free & msg["free"]
         return None
 
 
@@ -361,8 +362,8 @@ class SVI(SVI_):
         params = []
         for site in param_capture.trace.nodes.values():
             param = site["value"].unconstrained()
-            if site.get('fixed') is not None:
-                param.grad = site['fixed'] * param.grad
+            if site.get('free') is not None:
+                param.grad = site['free'] * param.grad
             params.append(param)
         self.optim(params)
         pyro.infer.util.zero_grads(params)
@@ -399,29 +400,34 @@ class BaseIRT(BasePsy):
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature
-        self.a_fixed = kwargs.get('a_fixed')
+        self.a_free = kwargs.get('a_free')
         self.a0 = kwargs.get('a0', torch.ones((self.x_feature, self.item_size)))
-        if x_feature > 1 and self.a_fixed is None:
-            self.a_fixed = torch.BoolTensor(x_feature, self.item_size).fill_(True)
+        if x_feature > 1 and self.a_free is None:
+            self.a_free = torch.BoolTensor(x_feature, self.item_size).fill_(True)
             for i in range(x_feature):
-                self.a_fixed[i, self.item_size-i:] = False
+                self.a_free[i, self.item_size - i:] = False
+                self.a0[i, self.item_size - i:] = 0
 
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
-        irt_param_kwargs = {'b': pyro.param('b', torch.zeros((1, item_size)))}
+        b0 = self.kwargs.get('b0', torch.zeros((1, self.item_size)))
+        irt_param_kwargs = {'b': pyro.param('b', b0)}
         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
-            with FixedMessenger(fixed=self.a_fixed):
-                irt_param_kwargs['a'] = pyro.param('a', self.a0, constraint=constraints.positive)
+            with FreeMessenger(free=self.a_free):
+                irt_param_kwargs['a'] = pyro.param('a', self.a0)
         if self._model in ('irt_3pl', 'irt_4pl'):
-            irt_param_kwargs['c'] = pyro.param('c', torch.zeros((1, item_size)))
+            irt_param_kwargs['c'] = pyro.param('c', torch.zeros((1, item_size)) + 0.1,
+                                               constraint=constraints.unit_interval)
         if self._model == 'irt_4pl':
-            irt_param_kwargs['d'] = pyro.param('d', torch.ones((1, item_size)))
+            irt_param_kwargs['d'] = pyro.param('d', torch.ones((1, item_size)) - 0.1,
+                                               constraint=constraints.unit_interval)
         with pyro.plate("data", sample_size, dim=-2) as ind:
-            irt_param_kwargs['x'] = pyro.sample(
-                'x',
-                dist.Normal(torch.zeros((len(ind), self.x_feature)), torch.ones((len(ind), self.x_feature)))
-            )
+            with pyro.poutine.scale(scale=1):
+                irt_param_kwargs['x'] = pyro.sample(
+                    'x',
+                    dist.Normal(torch.zeros((len(ind), self.x_feature)), torch.ones((len(ind), self.x_feature)))
+                )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
             data_ = data[ind]

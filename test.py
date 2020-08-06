@@ -2,9 +2,10 @@ from math import nan
 from unittest import TestCase
 
 import numpy as np
-from pyro.optim import Adam
+from pyro.infer import Trace_ELBO
+from pyro.optim import Adam, SGD
 import torch
-from sklearn.impute import KNNImputer
+# from sklearn.impute import KNNImputer
 
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
@@ -24,9 +25,11 @@ class IRTRandomMixin(object):
     def gen_sample(self, random_class, sample_size, **kwargs):
         random_instance = random_class(sample_size=sample_size, **kwargs)
         y = random_instance.y
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
+        # np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
         if self.cuda:
             y = y.cuda()
+            random_instance.a = random_instance.a.cuda()
+            random_instance.b = random_instance.b.cuda()
         return y, random_instance
 
 
@@ -54,12 +57,12 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt2PL, 10000)
         model = VIRT(data=y, model='irt_2pl')
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
 
 class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -86,7 +89,7 @@ class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0.5, item_size=1000)
+        y, random_instance = self.gen_missing_y(sample_size=1000000, missing_rate=0.9, item_size=1000)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 2e-3}), max_iter=100000)
 
@@ -97,19 +100,37 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
     def setUp(self):
         self.prepare_cuda()
 
+    # @staticmethod
+    # def optim(module_name, param_name):
+    #     if param_name in ('x_local', 'x_scale'):
+    #         return {'lr': 1e-2}
+    #     return {'lr': 1e-3}
+
+
     def test_bbvi(self):
-        mask = torch.ones((2, 10))
-        y, random_instance = self.gen_sample(RandomIrt2PL, 1000, x_feature=2, item_size=10, a_lower=1.5, a_upper=2.5,
-                                             mask=mask)
+        sample_size = 10000
+        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=20, x_feature=2)
+        random_instance.a = torch.FloatTensor(2, 20).normal_()
+        random_instance.a[-1, -1] = 0
+        y = random_instance.y
+        a0 = random_instance.a
+        b0 = random_instance.b
         model = VIRT(data=y, model='irt_2pl', x_feature=2)
-        model.fit(optim=Adam({'lr': 1e-2}), max_iter=50000, random_instance=random_instance)
+        model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000, random_instance=random_instance)
 
     def test_ai(self):
-        mask = torch.ones((2, 10))
-        mask[-1, -5:] = 0
-        y, random_instance = self.gen_sample(RandomIrt2PL, 100000, x_feature=2, item_size=10, mask=mask)
-        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=2)
-        model.fit(optim=Adam({'lr': 5e-3}), max_iter=50000, random_instance=random_instance)
+        sample_size = 100000
+        item_size = 200
+        x_feature = 2
+        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
+        random_instance.a = torch.FloatTensor(x_feature, item_size).normal_()
+        for i in range(x_feature):
+            random_instance.a[i, item_size - i:] = 0
+        y = random_instance.y
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}.txt', y.numpy())
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy().T)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=x_feature)
+        model.fit(optim=Adam({'lr': 1e-2}), max_iter=50000, random_instance=random_instance)
 
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -118,9 +139,9 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt3PL, 1000)
-        model = VIRT(data=y, model='irt_3pl', subsample_size=1000)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}), max_iter=50000)
+        y, random_instance = self.gen_sample(RandomIrt3PL, 10000)
+        model = VIRT(data=y, model='irt_3pl')
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt3PL, 1000000)
@@ -134,14 +155,14 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, random_instance = self.gen_sample(RandomIrt4PL, 1000)
-        model = VIRT(data=y, model='irt_4pl', subsample_size=1000)
-        model.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 5e-3}))
+        y, random_instance = self.gen_sample(RandomIrt4PL, 10000)
+        model = VIRT(data=y, model='irt_4pl', subsample_size=10000)
+        model.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
         y, random_instance = self.gen_sample(RandomIrt4PL, 100000)
         model = VaeIRT(data=y, model='irt_4pl', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=100000)
 
 
 class CDMRandomMixin(object):
