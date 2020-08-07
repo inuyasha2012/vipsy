@@ -109,28 +109,44 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         sample_size = 10000
-        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=20, x_feature=2)
-        random_instance.a = torch.FloatTensor(2, 20).normal_()
-        random_instance.a[-1, -1] = 0
+        x_feature = 2
+        item_size = 20
+        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
+        # random_instance.a = torch.FloatTensor(2, 20).normal_()
+        for i in range(x_feature):
+            random_instance.a[i, item_size - i:] = 0
         y = random_instance.y
         a0 = random_instance.a
         b0 = random_instance.b
-        model = VIRT(data=y, model='irt_2pl', x_feature=2)
+        model = VIRT(data=y, model='irt_2pl', x_feature=x_feature, subsample_size=100)
         model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000, random_instance=random_instance)
 
     def test_ai(self):
         sample_size = 100000
-        item_size = 200
+        item_size = 20
         x_feature = 2
         random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        random_instance.a = torch.FloatTensor(x_feature, item_size).normal_()
+        # random_instance.a = torch.FloatTensor(x_feature, item_size).normal_()
         for i in range(x_feature):
             random_instance.a[i, item_size - i:] = 0
         y = random_instance.y
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}.txt', y.numpy())
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy().T)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=x_feature)
-        model.fit(optim=Adam({'lr': 1e-2}), max_iter=50000, random_instance=random_instance)
+        model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000, random_instance=random_instance)
+
+    def test_cfa(self):
+        data = np.loadtxt('ex5.2.dat')
+        a_free = torch.FloatTensor([
+            [1, 0],
+            [1, 0],
+            [1, 0],
+            [0, 1],
+            [0, 1],
+            [0, 1],
+        ])
+        model = VIRT(data=torch.from_numpy(data), model='irt_2pl', subsample_size=100, x_feature=2, a_free=a_free.T, a0=a_free.T)
+        model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000)
 
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):

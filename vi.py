@@ -301,14 +301,14 @@ class NormEncoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, x_dim)
-        self.fc22 = nn.Linear(hidden_dim, x_dim)
+        self.fc22 = nn.Linear(hidden_dim, int(x_dim * (x_dim + 1) / 2))
         self.softplus = nn.Softplus()
 
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
         x_scale = torch.exp(self.fc22(hidden))
-        return x_loc, x_scale
+        return x_loc, torch.tril(torch.mean(x_scale, dim=0))
 
 
 class BinEncoder(nn.Module):
@@ -422,11 +422,11 @@ class BaseIRT(BasePsy):
         if self._model == 'irt_4pl':
             irt_param_kwargs['d'] = pyro.param('d', torch.ones((1, item_size)) - 0.1,
                                                constraint=constraints.unit_interval)
-        with pyro.plate("data", sample_size, dim=-2) as ind:
+        with pyro.plate("data", sample_size) as ind:
             with pyro.poutine.scale(scale=1):
                 irt_param_kwargs['x'] = pyro.sample(
                     'x',
-                    dist.Normal(torch.zeros((len(ind), self.x_feature)), torch.ones((len(ind), self.x_feature)))
+                    dist.MultivariateNormal(torch.zeros((len(ind), self.x_feature)), torch.eye(self.x_feature))
                 )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
@@ -435,7 +435,7 @@ class BaseIRT(BasePsy):
             if data_nan.any():
                 data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
                 p = torch.where(data_nan, torch.full_like(p, 0), p)
-            pyro.sample('y', dist.Bernoulli(p), obs=data_)
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
@@ -470,13 +470,13 @@ class VaeIRT(BaseIRT):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
-        with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
+        with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
             data_ = data[idx]
             data_nan = torch.isnan(data_)
             if data_nan.any():
                 data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
-            x_local, x_scale = self.encoder.forward(data_)
-            pyro.sample('x', dist.Normal(x_local, x_scale))
+            x_local, scale_tril = self.encoder.forward(data_)
+            pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=scale_tril))
 
 
 class VIRT(BaseIRT):
@@ -485,9 +485,9 @@ class VIRT(BaseIRT):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
         x_local = pyro.param('x_local', torch.zeros((sample_size, self.x_feature)))
-        x_scale = pyro.param('x_scale', torch.ones((sample_size, self.x_feature)), constraint=constraints.positive)
-        with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
-            pyro.sample('x', dist.Normal(x_local[idx], x_scale[idx]))
+        scale_tril = pyro.param('x_scale', torch.tril(torch.eye(self.x_feature)), constraint=constraints.lower_cholesky)
+        with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
+            pyro.sample('x', dist.MultivariateNormal(x_local[idx], scale_tril=scale_tril))
 
 
 class BaseCDM(BasePsy):
