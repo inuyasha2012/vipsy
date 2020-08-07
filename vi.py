@@ -301,14 +301,17 @@ class NormEncoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, x_dim)
-        self.fc22 = nn.Linear(hidden_dim, int(x_dim * (x_dim + 1) / 2))
+        self.fc22 = nn.Linear(hidden_dim, x_dim)
         self.softplus = nn.Softplus()
 
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
-        x_scale = torch.exp(self.fc22(hidden))
-        return x_loc, torch.tril(torch.mean(x_scale, dim=0))
+        s = self.fc22(hidden)
+        s1 = s.unsqueeze(2)
+        s2 = s.unsqueeze(1)
+        cov = s1.bmm(s2)
+        return x_loc, cov
 
 
 class BinEncoder(nn.Module):
@@ -426,7 +429,9 @@ class BaseIRT(BasePsy):
             with pyro.poutine.scale(scale=1):
                 irt_param_kwargs['x'] = pyro.sample(
                     'x',
-                    dist.MultivariateNormal(torch.zeros((len(ind), self.x_feature)), torch.eye(self.x_feature))
+                    dist.MultivariateNormal(
+                        torch.zeros((len(ind), self.x_feature)),
+                        scale_tril=torch.eye(self.x_feature).repeat(len(ind), 1, 1))
                 )
             irt_fun = self.IRT_FUN[self._model]
             p = irt_fun(**irt_param_kwargs)
@@ -475,8 +480,8 @@ class VaeIRT(BaseIRT):
             data_nan = torch.isnan(data_)
             if data_nan.any():
                 data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
-            x_local, scale_tril = self.encoder.forward(data_)
-            pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=scale_tril))
+            x_local, cov = self.encoder.forward(data_)
+            pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=cov))
 
 
 class VIRT(BaseIRT):
@@ -485,9 +490,9 @@ class VIRT(BaseIRT):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
         x_local = pyro.param('x_local', torch.zeros((sample_size, self.x_feature)))
-        scale_tril = pyro.param('x_scale', torch.tril(torch.eye(self.x_feature)), constraint=constraints.lower_cholesky)
+        scale_tril = pyro.param('x_scale', torch.eye(self.x_feature).repeat(sample_size, 1, 1), constraint=constraints.lower_cholesky)
         with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
-            pyro.sample('x', dist.MultivariateNormal(x_local[idx], scale_tril=scale_tril))
+            pyro.sample('x', dist.MultivariateNormal(x_local[idx], scale_tril=scale_tril[idx]))
 
 
 class BaseCDM(BasePsy):
