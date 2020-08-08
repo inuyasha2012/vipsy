@@ -100,24 +100,14 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
     def setUp(self):
         self.prepare_cuda()
 
-    # @staticmethod
-    # def optim(module_name, param_name):
-    #     if param_name in ('x_local', 'x_scale'):
-    #         return {'lr': 1e-2}
-    #     return {'lr': 1e-3}
-
-
     def test_bbvi(self):
         sample_size = 10000
-        x_feature = 10
+        x_feature = 2
         item_size = 100
         random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        # random_instance.a = torch.FloatTensor(2, 20).normal_()
         for i in range(x_feature):
             random_instance.a[i, item_size - i:] = 0
         y = random_instance.y
-        a0 = random_instance.a
-        b0 = random_instance.b
         model = VIRT(data=y, model='irt_2pl', x_feature=x_feature)
         model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000, random_instance=random_instance)
 
