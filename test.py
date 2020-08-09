@@ -8,7 +8,7 @@ import torch
 # from sklearn.impute import KNNImputer
 
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
-    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
+    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina, IAVIRT
 
 
 class TestMixin(object):
@@ -113,7 +113,7 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_ai(self):
         sample_size = 100000
-        item_size = 20
+        item_size = 200
         x_feature = 2
         random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         # random_instance.a = torch.FloatTensor(x_feature, item_size).normal_()
@@ -123,7 +123,7 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}.txt', y.numpy())
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy().T)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=x_feature)
-        model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000, random_instance=random_instance)
+        model.fit(optim=Adam({'lr': 1e-3}), max_iter=100000, random_instance=random_instance)
 
     def test_cfa(self):
         data = np.loadtxt('ex5.2.dat')

@@ -5,14 +5,13 @@ import torch.distributions
 import pyro
 from pyro import distributions as dist, poutine
 from pyro.distributions import constraints
-from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO, TraceMeanField_ELBO, TraceGraph_ELBO
-from pyro.infer.autoguide import AutoMultivariateNormal, AutoNormal
+from pyro.distributions.transforms import CorrLCholeskyTransform
+from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO
 from pyro.infer.util import torch_item
 from pyro.optim import Adam
 from pyro.poutine.messenger import Messenger
 from torch import nn
 from torch.distributions import LowerCholeskyTransform
-from torch.nn import init
 from tqdm import trange
 
 # ======心理测量模型 start=============
@@ -302,18 +301,14 @@ class NormEncoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, x_dim)
-        self.fc22 = nn.Linear(hidden_dim, x_dim)
+        self.fc22 = nn.Linear(hidden_dim, int(x_dim * (x_dim - 1) / 2))
         self.softplus = nn.Softplus()
-        self.transform = LowerCholeskyTransform()
 
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
-        s = self.fc22(hidden)
-        s1 = s.unsqueeze(2)
-        s2 = s.unsqueeze(1)
-        cov = s1.bmm(s2)
-        return x_loc, self.transform(cov)
+        x_scale = self.fc22(hidden)
+        return x_loc, x_scale
 
 
 class BinEncoder(nn.Module):
@@ -476,13 +471,14 @@ class VaeIRT(BaseIRT):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
+        transform = CorrLCholeskyTransform()
         with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
             data_ = data[idx]
             data_nan = torch.isnan(data_)
             if data_nan.any():
                 data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
-            x_local, x_scale_tril = self.encoder.forward(data_)
-            pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=x_scale_tril))
+            x_local, x_scale = self.encoder.forward(data_)
+            pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=transform(x_scale)))
 
 
 class VIRT(BaseIRT):
