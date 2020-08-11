@@ -8,7 +8,7 @@ import torch
 # from sklearn.impute import KNNImputer
 
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
-    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina, IAVIRT
+    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
 
 
 class TestMixin(object):
@@ -123,7 +123,7 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}.txt', y.numpy())
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy().T)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100, x_feature=x_feature)
-        model.fit(optim=Adam({'lr': 1e-3}), max_iter=100000, random_instance=random_instance)
+        model.fit(optim=Adam({'lr': 5e-3}), max_iter=100000, random_instance=random_instance)
 
     def test_cfa(self):
         data = np.loadtxt('ex5.2.dat')

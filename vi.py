@@ -301,13 +301,17 @@ class NormEncoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, x_dim)
-        self.fc22 = nn.Linear(hidden_dim, int(x_dim * (x_dim - 1) / 2))
+        self.fc22 = nn.Linear(hidden_dim, int(x_dim * (x_dim + 1) / 2))
+        self.x_dim = x_dim
         self.softplus = nn.Softplus()
 
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
-        x_scale = self.fc22(hidden)
+        x_scale_ = self.fc22(hidden)
+        x_scale = torch.zeros(x_scale_.shape[:-1] + (self.x_dim, self.x_dim))
+        idx = torch.tril_indices(self.x_dim, self.x_dim)
+        x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
         return x_loc, x_scale
 
 
@@ -471,7 +475,7 @@ class VaeIRT(BaseIRT):
         sample_size = self.sample_size
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
-        transform = CorrLCholeskyTransform()
+        transform = LowerCholeskyTransform()
         with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
             data_ = data[idx]
             data_nan = torch.isnan(data_)
