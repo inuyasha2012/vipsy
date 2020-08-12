@@ -373,6 +373,9 @@ class SVI(SVI_):
         pyro.infer.util.zero_grads(params)
         return torch_item(loss)
 
+def rmse(x, y):
+    return (x - y).pow(2).sqrt().mean()
+
 # ======参数约束 end==============
 
 
@@ -455,7 +458,8 @@ class BaseIRT(BasePsy):
                         postfix_kwargs['threshold_error'] = '{0}'.format((b - random_instance.b).pow(2).sqrt().mean())
                         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
                             a = pyro.param('a')
-                            postfix_kwargs['slop_error'] = '{0}'.format((a - random_instance.a).pow(2).sqrt().mean())
+                            a_error = rmse(a, random_instance.a)
+                            postfix_kwargs['slop_error'] = '{0}'.format(a_error)
                         if self._model in ('irt_3pl', 'irt_4pl'):
                             c = pyro.param('c')
                             postfix_kwargs['guess_error'] = '{0}'.format((c - random_instance.c).pow(2).sqrt().mean())
