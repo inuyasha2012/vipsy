@@ -27,15 +27,16 @@ def irt_1pl(x, b):
     return torch.sigmoid(x + b)
 
 
-def irt_2pl(x, a, b):
+def irt_2pl(x, a, b, D=1.702):
     """
     双参数IRT模型
+    :param D: D
     :param x: 潜变量
     :param a: 斜率
     :param b: 截距
     :return: 反应概率
     """
-    return torch.sigmoid(x.mm(a) + b)
+    return torch.sigmoid(D * (x.mm(a) + b))
 
 
 def irt_3pl(x, a, b, c):
@@ -348,6 +349,7 @@ class SoftmaxEncoder(nn.Module):
 
 # ======参数约束 start==============
 
+
 class FreeMessenger(Messenger):
     def __init__(self, free):
         super().__init__()
@@ -372,6 +374,7 @@ class SVI(SVI_):
         self.optim(params)
         pyro.infer.util.zero_grads(params)
         return torch_item(loss)
+
 
 def rmse(x, y):
     return (x - y).pow(2).sqrt().mean()

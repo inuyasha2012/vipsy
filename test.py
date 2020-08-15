@@ -116,15 +116,14 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         item_size = 20
         x_feature = 5
         random_instance = RandomIrt3PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
-        angle_ = torch.FloatTensor(x_feature - 1, item_size).uniform_(0, np.pi / 2)
+        # mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
+        # mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
         # random_instance.a = torch.FloatTensor(x_feature, item_size).uniform_(0, 3)
         params_ = np.loadtxt('pa.csv', delimiter=',')
         params = torch.from_numpy(params_)
-        random_instance.a = params[:, :3].float().T
-        random_instance.b = params[:, 3].view(1, -1).float()
-        # random_instance.c = params[:, 4].view(1, -1).float()
+        random_instance.a = params[:, :5].float().T
+        random_instance.b = params[:, 5].view(1, -1).float()
+        random_instance.c = params[:, 6].view(1, -1).float()
         for i in range(x_feature):
             random_instance.a[i, item_size - i:] = 0
         y = random_instance.y
