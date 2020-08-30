@@ -1,14 +1,15 @@
+import math
 from math import nan
 
+import numpy as np
 import torch
 import torch.distributions
 import pyro
 from pyro import distributions as dist, poutine
 from pyro.distributions import constraints
-from pyro.distributions.transforms import CorrLCholeskyTransform
-from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO
+from pyro.infer import SVI as SVI_, Trace_ELBO, config_enumerate, TraceEnum_ELBO, Predictive, Importance
 from pyro.infer.util import torch_item
-from pyro.optim import Adam
+from pyro.optim import Adam, PyroLRScheduler
 from pyro.poutine.messenger import Messenger
 from torch import nn
 from torch.distributions import LowerCholeskyTransform
@@ -27,7 +28,7 @@ def irt_1pl(x, b):
     return torch.sigmoid(x + b)
 
 
-def irt_2pl(x, a, b, D=1.702):
+def irt_2pl(x, a, b, D=1):
     """
     双参数IRT模型
     :param D: D
@@ -375,10 +376,6 @@ class SVI(SVI_):
         pyro.infer.util.zero_grads(params)
         return torch_item(loss)
 
-
-def rmse(x, y):
-    return (x - y).pow(2).sqrt().mean()
-
 # ======参数约束 end==============
 
 
@@ -454,6 +451,8 @@ class BaseIRT(BasePsy):
             for i in t:
                 t.set_description(f'迭代：{i}')
                 loss = svi.step(self.data)
+                if isinstance(optim, PyroLRScheduler):
+                    optim.step()
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
@@ -461,7 +460,7 @@ class BaseIRT(BasePsy):
                         postfix_kwargs['threshold_error'] = '{0}'.format((b - random_instance.b).pow(2).sqrt().mean())
                         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
                             a = pyro.param('a')
-                            a_error = rmse(a, random_instance.a)
+                            a_error = (a - random_instance.a).pow(2).sqrt().sum() / (self.x_feature * self.item_size - self.x_feature * (self.x_feature - 1) / 2)
                             postfix_kwargs['slop_error'] = '{0}'.format(a_error)
                         if self._model in ('irt_3pl', 'irt_4pl'):
                             c = pyro.param('c')
@@ -469,7 +468,7 @@ class BaseIRT(BasePsy):
                         if self._model == 'irt_4pl':
                             d = pyro.param('d')
                             postfix_kwargs['slip_error'] = '{0}'.format((d - random_instance.d).pow(2).sqrt().mean())
-                    t.set_postfix(loss=loss, **postfix_kwargs)
+                    t.set_postfix(loss='{0:1.2f}'.format(loss), **postfix_kwargs)
 
 
 class VaeIRT(BaseIRT):

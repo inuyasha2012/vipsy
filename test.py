@@ -3,10 +3,10 @@ from unittest import TestCase
 
 import numpy as np
 from pyro.infer import Trace_ELBO
-from pyro.optim import Adam, SGD
+from pyro.optim import Adam, StepLR, ReduceLROnPlateau, MultiStepLR, PyroLRScheduler
 import torch
 # from sklearn.impute import KNNImputer
-
+from t import generate_randval
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
 
@@ -89,10 +89,17 @@ class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, random_instance = self.gen_missing_y(sample_size=1000000, missing_rate=0.9, item_size=1000)
+        y, random_instance = self.gen_missing_y(sample_size=10000, missing_rate=0.9, item_size=1000)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 2e-3}), max_iter=100000)
+        model.fit(random_instance=random_instance, optim=Adam(self.optim), max_iter=100000)
 
+    @staticmethod
+    def optim(module_name, param_name):
+        if param_name == 'a':
+            return {'lr': 1e-2}
+        if param_name == 'b':
+            return {'lr': 2e-3}
+        return {'lr': 2e-3}
 
 class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
     # 多维项目反应理论
@@ -102,35 +109,133 @@ class Irt2PLMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         sample_size = 10000
-        x_feature = 2
-        item_size = 100
+        item_size = 500
+        x_feature = 100
         random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        for i in range(x_feature):
-            random_instance.a[i, item_size - i:] = 0
-        y = random_instance.y
-        model = VIRT(data=y, model='irt_2pl', x_feature=x_feature)
-        model.fit(optim=Adam({'lr': 1e-2}), max_iter=100000, random_instance=random_instance)
-
-    def test_ai(self):
-        sample_size = 3000
-        item_size = 20
-        x_feature = 5
-        random_instance = RandomIrt3PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        # mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        # mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
-        # random_instance.a = torch.FloatTensor(x_feature, item_size).uniform_(0, 3)
-        params_ = np.loadtxt('pa.csv', delimiter=',')
-        params = torch.from_numpy(params_)
-        random_instance.a = params[:, :5].float().T
-        random_instance.b = params[:, 5].view(1, -1).float()
-        random_instance.c = params[:, 6].view(1, -1).float()
-        for i in range(x_feature):
-            random_instance.a[i, item_size - i:] = 0
+        mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
+        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
+        logit_c = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
+        c = 1 / (1 + torch.exp(-logit_c))
+        a = torch.zeros((x_feature, item_size))
+        for j in range(item_size):
+            if j < item_size - x_feature + 1:
+                x_low = [0 for _ in range(x_feature)]
+                x_up = [np.pi / 2 for _ in range(x_feature)]
+                x_sum = np.pi / 2 * (x_feature - 1)
+                sigma = []
+                generate_randval(x_low, x_up, x_sum, sigma)
+                a[:, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+            else:
+                x_size = item_size - j
+                x_low = [0 for _ in range(x_size)]
+                x_up = [np.pi / 2 for _ in range(x_size)]
+                x_sum = np.pi / 2 * (x_size - 1)
+                sigma = []
+                generate_randval(x_low, x_up, x_sum, sigma)
+                a[:x_size, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+        random_instance.a = a
+        random_instance.b = -mdiff * mdisc
+        random_instance.b = random_instance.b.view(1, -1)
+        random_instance.c = c
+        # for i in range(x_feature):
+        #     random_instance.a[i, item_size - i:] = 0
         y = random_instance.y
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}.txt', y.numpy())
         # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy().T)
-        model = VaeIRT(data=y, model='irt_3pl', subsample_size=100, x_feature=x_feature)
-        model.fit(optim=Adam({'lr': 1e-3}), max_iter=100000, random_instance=random_instance)
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_b.txt', random_instance.b.numpy().T)
+        model = VIRT(data=y, model='irt_2pl', x_feature=x_feature, subsample_size=100)
+        scheduler = StepLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': 1e-2}, 'gamma': 0.7,
+                            'step_size': 1000})
+        model.fit(optim=Adam(self.optim), max_iter=100000, random_instance=random_instance)
+
+    def test_ai(self):
+        sample_size = 10000
+        subsample_size = 100
+        item_size = 500
+        x_feature = 100
+        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
+        mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
+        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
+        logit_c = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
+        logit_d = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
+        c = 1 / (1 + torch.exp(-logit_c))
+        d = 1 / (1 + torch.exp(logit_d))
+        a = torch.zeros((x_feature, item_size))
+        for j in range(item_size):
+            if j < item_size - x_feature + 1:
+                x_low = [0 for _ in range(x_feature)]
+                x_up = [np.pi / 2 for _ in range(x_feature)]
+                x_sum = np.pi / 2 * (x_feature - 1)
+                sigma = []
+                generate_randval(x_low, x_up, x_sum, sigma)
+                a[:, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+            else:
+                x_size = item_size - j
+                x_low = [0 for _ in range(x_size)]
+                x_up = [np.pi / 2 for _ in range(x_size)]
+                x_sum = np.pi / 2 * (x_size - 1)
+                sigma = []
+                generate_randval(x_low, x_up, x_sum, sigma)
+                a[:x_size, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+        random_instance.a = a
+        random_instance.b = -mdiff * mdisc
+        random_instance.b = random_instance.b.view(1, -1)
+        random_instance.c = c
+        random_instance.d = d
+        # for i in range(x_feature):
+        #     random_instance.a[i, item_size - i:] = 0
+        y = random_instance.y
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}.txt', y.numpy())
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy().T)
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_b.txt', random_instance.b.numpy().T)
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_c.txt', random_instance.c.numpy().T)
+        # np.savetxt(f'{random_instance.name or "data"}_{sample_size}_d.txt', random_instance.d.numpy().T)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature)
+        scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
+                                 'optim_args': self.optim,
+                                 'milestones': [
+                                     int(sample_size / subsample_size) * 50,
+                                     int(sample_size / subsample_size) * 60
+                                 ],
+                                 'gamma': 0.1,
+                                 })
+        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 70), random_instance=random_instance,
+                  loss=Trace_ELBO(num_particles=1))
+
+    @staticmethod
+    def optim(module_name, param_name):
+        if param_name == 'a':
+            return {'lr': 1e-1}
+        if param_name == 'b':
+            return {'lr': 1e-1}
+        return {'lr': 1e-3}
+
+    def test_load_data_ai(self):
+        x_feature = 100
+        y_ = np.loadtxt('irt_2pl_10000.txt')
+        y = torch.from_numpy(y_).float()
+        a_ = np.loadtxt('irt_2pl_10000_a.txt')
+        a = torch.from_numpy(a_.T).float()
+        b_ = np.loadtxt('irt_2pl_10000_b.txt')
+        b = torch.from_numpy(b_.T).float()
+        sample_size = 10000
+        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=100, x_feature=x_feature)
+        random_instance.a = a
+        random_instance.b = b
+        subsample_size = 100
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature)
+        scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
+                                 'optim_args': self.optim,
+                                 'milestones': [
+                                     int(sample_size / subsample_size) * 50,
+                                     # int(sample_size / subsample_size) * 60
+                                 ],
+                                 'gamma': 0.1,
+                                 })
+        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 70),
+                  random_instance=random_instance,
+                  loss=Trace_ELBO(num_particles=1)
+                  )
 
     def test_cfa(self):
         data = np.loadtxt('ex5.2.dat')
