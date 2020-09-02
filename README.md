@@ -38,10 +38,10 @@ def gen_cdm_sample(random_class, sample_size):
 四参数IRT模型，基于黑盒变分推断
 ```python
 from pyro.optim import Adam
-from vi import VIRT, RandomIrt4PL
+from vi import VIRTManyScale, RandomIrt4PL
 
 y, random_instance = gen_irt_sample(RandomIrt4PL, 1000)
-model = VIRT(data=y, model='irt_4pl', subsample_size=1000)
+model = VIRTManyScale(data=y, model='irt_4pl', subsample_size=1000)
 model.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 5e-3}))
 ```
 四参数IRT模型，基于Amortized Variational Inference
