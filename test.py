@@ -85,7 +85,7 @@ class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_missing_y(sample_size=10000, missing_rate=0.1, item_size=100)
-        model = VIRTManyScale(data=y, model='irt_2pl', subsample_size=10000)
+        model = VIRT(data=y, model='irt_2pl', subsample_size=10000)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
@@ -244,7 +244,7 @@ class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
             [0, 1],
             [0, 1],
         ])
-        model = VIRTManyScale(data=torch.from_numpy(data), model='irt_2pl', subsample_size=100, x_feature=2,
+        model = VIRT(data=torch.from_numpy(data), model='irt_2pl', subsample_size=100, x_feature=2,
                               a_free=a_free.T, a0=a_free.T)
         model.fit(optim=Adam({'lr': 1e-2}), max_iter=10000)
 
@@ -256,7 +256,7 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt3PL, 10000)
-        model = VIRTManyScale(data=y, model='irt_3pl')
+        model = VIRT(data=y, model='irt_3pl')
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
@@ -272,7 +272,7 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
     def test_bbvi(self):
         y, random_instance = self.gen_sample(RandomIrt4PL, 10000)
-        model = VIRTManyScale(data=y, model='irt_4pl', subsample_size=10000)
+        model = VIRT(data=y, model='irt_4pl', subsample_size=10000)
         model.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):

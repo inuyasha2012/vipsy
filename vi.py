@@ -448,12 +448,12 @@ class BaseIRT(BasePsy):
                                                constraint=constraints.unit_interval)
         if self.x_feature == 1:
             with pyro.plate("data", sample_size, dim=-2) as idx:
-                with pyro.poutine.scale(scale=1):
-                    irt_param_kwargs['x'] = pyro.sample(
-                        'x',
-                        dist.Normal(torch.zeros((len(idx), self.x_feature)), torch.ones((len(idx), self.x_feature)))
-                    )
-                self._sample_y(data, idx, irt_param_kwargs)
+                irt_param_kwargs['x'] = pyro.sample(
+                    'x',
+                    dist.Normal(torch.zeros((len(idx), self.x_feature)), torch.ones((len(idx), self.x_feature)))
+                )
+                p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
+                pyro.sample('y', dist.Bernoulli(p), obs=data_)
         else:
             with pyro.plate("data", sample_size) as idx:
                 if self.share_cov:
@@ -472,9 +472,10 @@ class BaseIRT(BasePsy):
                             scale_tril=torch.eye(self.x_feature).repeat(len(idx), 1, 1)
                         )
                     )
-                self._sample_y(data, idx, irt_param_kwargs)
+                p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
+                pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
-    def _sample_y(self, data, idx, irt_param_kwargs):
+    def _get_p_data(self, data, idx, irt_param_kwargs):
         irt_fun = self.IRT_FUN[self._model]
         p = irt_fun(**irt_param_kwargs)
         data_ = data[idx]
@@ -482,7 +483,7 @@ class BaseIRT(BasePsy):
         if data_nan.any():
             data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
             p = torch.where(data_nan, torch.full_like(p, 0), p)
-        pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
+        return p, data_
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)

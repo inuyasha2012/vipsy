@@ -8,103 +8,20 @@ vipsy是《变分推断在计量心理模型中的应用(variational inference f
 与其他（包括斯坦福的项目）基于变分推断的心理测量模型参数估计库（包）不同，本项目的模型不是全贝叶斯模型，是频率学派的心理测量模型。
 
 # 与已有库（包）的区别
-除了斯坦福大学的项目，其他基于变分推断的心理测量模型参数估计库（包）使用的算法是坐标下降变分推断，斯坦福大学项目的算法是他们自己号称的VIBO（他们的VIBO的证明有点问题啊），本项目使用的算法是黑盒变分推断和Amortized Variational Inference
+- 除了斯坦福大学的项目，其他基于变分推断的心理测量模型参数估计库（包）使用的算法是坐标下降变分推断，斯坦福大学项目的算法是他们自己号称的VIBO（他们的VIBO的有点问题啊），本项目使用的算法是黑盒变分推断和Amortized Variational Inference
+- 多维项目反应模型的参数估计精度完爆斯坦福大学项目
+- 多维项目反应模型的参数估计精度和运行时间完爆MHRM算法（mirt包实现）
+- 测试用例展示了100个维度的项目反应理论
 
 # 本项目处理的模型
-- 单参数IRT模型
-- 双参数IRT模型
-- 三参数IRT模型
-- 四参数IRT模型
+- 1-4参数单维IRT模型
+- 1-4参数多维项目反应理论
+- 缺失数据项目反应理论
+- 验证性多维项目反应理论
 - DINA模型
 - DINO模型
 - HO-DINA模型
+- 缺失数据认知诊断模型
 
-# 代码示例
-生成IRT模型人工数据的方法
-```python
-def gen_irt_sample(random_class, sample_size):
-    random_instance = random_class(sample_size=sample_size)
-    y = random_instance.y
-    return y, random_instance
-```
-生成认知诊断模型人工数据的方法
-```python
-def gen_cdm_sample(random_class, sample_size):
-    random_instance = random_class(sample_size=sample_size)
-    y = random_instance.y
-    q = random_instance.q
-    return y, q, random_instance
-```
-四参数IRT模型，基于黑盒变分推断
-```python
-from pyro.optim import Adam
-from vi import VIRTManyScale, RandomIrt4PL
 
-y, random_instance = gen_irt_sample(RandomIrt4PL, 1000)
-model = VIRTManyScale(data=y, model='irt_4pl', subsample_size=1000)
-model.fit(random_instance=random_instance, max_iter=50000, optim=Adam({'lr': 5e-3}))
-```
-四参数IRT模型，基于Amortized Variational Inference
-```python
-from pyro.optim import Adam
-from vi import RandomIrt4PL, VaeIRT
-
-y, random_instance = gen_irt_sample(RandomIrt4PL, 100000)
-model = VaeIRT(data=y, model='irt_4pl', subsample_size=100)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
-```
-DINA模型，基于黑盒变分推断
-```python
-from pyro.optim import Adam
-from vi import RandomDina, VCDM
-
-y, q, random_instance = gen_cdm_sample(RandomDina, 1000)
-model = VCDM(data=y, q=q, model='dina', subsample_size=1000)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
-```
-DINA模型，基于Amortized Variational Inference
-```python
-from pyro.optim import Adam
-from vi import RandomDina, VaeCDM
-
-y, q, random_instance = gen_cdm_sample(RandomDina, 100000)
-model = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-2}))
-```
-DINA模型，基于离散潜变量黑盒变分推断
-```python
-from pyro.optim import Adam
-from vi import RandomDina, VCCDM
-
-y, q, random_instance = gen_cdm_sample(RandomDina, 1500)
-model = VCCDM(data=y, q=q, model='dina', subsample_size=1500)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
-```
-DINA模型，基于离散潜变量Amortized Variational Inference
-```python
-from pyro.optim import Adam
-from vi import RandomDina, VaeCCDM
-
-y, q, random_instance = gen_cdm_sample(RandomDina, 100000)
-model = VaeCCDM(data=y, q=q, model='dina', subsample_size=100)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
-```
-HO-DINA模型，基于离散潜变量黑盒变分推断
-```python
-from pyro.optim import Adam
-from vi import RandomHoDina, VCHoDina
-
-y, q, random_instance = gen_cdm_sample(RandomHoDina, 1000)
-model = VCHoDina(data=y, q=q, subsample_size=1000)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
-```
-HO-DINA模型，基于离散潜变量Amortized Variational Inference
-```python
-from pyro.optim import Adam
-from vi import RandomHoDina, VaeCHoDina
-
-y, q, random_instance = gen_cdm_sample(RandomHoDina, 100000)
-model = VaeCHoDina(data=y, q=q, subsample_size=100)
-model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
-```
 更多测试用例详见[测试文件](https://github.com/inuyasha2012/virt/blob/master/test.py)
