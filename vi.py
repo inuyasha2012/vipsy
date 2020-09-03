@@ -18,17 +18,17 @@ from tqdm import trange
 # ======心理测量模型 start=============
 
 
-def irt_1pl(x, b):
+def irt_1pl(x, b, D):
     """
     单参数IRT模型
     :param x: 潜变量
     :param b: 截距
     :return: 反应概率
     """
-    return torch.sigmoid(x + b)
+    return torch.sigmoid(D * (x + b))
 
 
-def irt_2pl(x, a, b, D=1.702):
+def irt_2pl(x, a, b, D=1):
     """
     双参数IRT模型
     :param D: D
@@ -40,7 +40,7 @@ def irt_2pl(x, a, b, D=1.702):
     return torch.sigmoid(D * (x.mm(a) + b))
 
 
-def irt_3pl(x, a, b, c):
+def irt_3pl(x, a, b, c, D=1):
     """
     三参数IRT模型
     :param x: 潜变量
@@ -49,10 +49,10 @@ def irt_3pl(x, a, b, c):
     :param c: 猜测参数
     :return: 反应概率
     """
-    return c + (1 - c) * irt_2pl(x, a, b)
+    return c + (1 - c) * irt_2pl(x, a, b, D)
 
 
-def irt_4pl(x, a, b, c, d):
+def irt_4pl(x, a, b, c, d, D=1):
     """
     四参数IRT模型
     :param x: 潜变量
@@ -62,7 +62,7 @@ def irt_4pl(x, a, b, c, d):
     :param d: 手滑参数
     :return: 反应概率
     """
-    return c + (d - c) * irt_2pl(x, a, b)
+    return c + (d - c) * irt_2pl(x, a, b, D)
 
 
 def dina(attr, q, g, s):
@@ -169,7 +169,7 @@ class RandomHoDina(RandomDina):
     # 生成随机HO-DINA模型数据
     name = 'ho_dina'
 
-    def __init__(self, theta_dim=1, theta_local=0, theta_scale=1, lam0_local=0, lam0_scale=1, lam1_lower=0.5,
+    def __init__(self, theta_local=0, theta_scale=1, lam0_local=0, lam0_scale=1, lam1_lower=0.5,
                  lam1_upper=3, *args, **kwargs):
         """
         :param theta_dim: 潜变量维度
@@ -183,9 +183,9 @@ class RandomHoDina(RandomDina):
         :param kwargs:
         """
         super().__init__(*args, **kwargs)
-        self.theta = torch.FloatTensor(self.sample_size, theta_dim).normal_(theta_local, theta_scale)
-        self.lam0 = torch.FloatTensor(theta_dim, self.q_size).normal_(lam0_local, lam0_scale)
-        self.lam1 = torch.FloatTensor(theta_dim, self.q_size).uniform_(lam1_lower, lam1_upper)
+        self.theta = torch.FloatTensor(self.sample_size, 1).normal_(theta_local, theta_scale)
+        self.lam0 = torch.FloatTensor(1, self.q_size).normal_(lam0_local, lam0_scale)
+        self.lam1 = torch.FloatTensor(1, self.q_size).uniform_(lam1_lower, lam1_upper)
 
     @property
     def y(self):
@@ -419,11 +419,12 @@ class BaseIRT(BasePsy):
         'irt_4pl': irt_4pl,
     }
 
-    def __init__(self, model='irt_2pl', x_feature=1, share_cov=False,*args, **kwargs):
+    def __init__(self, model='irt_2pl', x_feature=1, share_cov=False, D=1, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature
         self.share_cov = share_cov
+        self.D = D
         self.a_free = kwargs.get('a_free')
         self.a0 = kwargs.get('a0', torch.ones((self.x_feature, self.item_size)))
         if x_feature > 1 and self.a_free is None:
@@ -436,7 +437,7 @@ class BaseIRT(BasePsy):
         item_size = self.item_size
         sample_size = self.sample_size
         b0 = self.kwargs.get('b0', torch.zeros((1, self.item_size)))
-        irt_param_kwargs = {'b': pyro.param('b', b0)}
+        irt_param_kwargs = {'b': pyro.param('b', b0), 'D': self.D}
         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
             with FreeMessenger(free=self.a_free):
                 irt_param_kwargs['a'] = pyro.param('a', self.a0)
@@ -720,15 +721,15 @@ class VCHoDina(VCCDM):
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
-        lam0 = pyro.param('lam0', torch.zeros((1, 5)))
-        lam1 = pyro.param('lam1', torch.ones((1, 5)), constraint=constraints.positive)
+        lam0 = pyro.param('lam0', torch.zeros((1, self.attr_size)))
+        lam1 = pyro.param('lam1', torch.ones((1, self.attr_size)), constraint=constraints.positive)
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         all_p = dina(self.all_attr, self.q, g, s)
-        with pyro.plate("data", sample_size) as ind:
+        with pyro.plate("data", sample_size) as idx:
             theta = pyro.sample(
                 'theta',
-                dist.Normal(torch.zeros((len(ind), 1)), torch.ones((len(ind), 1))).to_event(1)
+                dist.Normal(torch.zeros((len(idx), 1)), torch.ones((len(idx), 1))).to_event(1)
             )
             attr_p = torch.sigmoid(theta.mm(lam1) + lam0)
             likelihood_attr_p = torch.exp(torch.log(attr_p).mm(self.all_attr.T) + torch.log(1 - attr_p).mm(1 - self.all_attr.T))
@@ -737,7 +738,7 @@ class VCHoDina(VCCDM):
                 dist.Categorical(likelihood_attr_p).to_event(0)
             )
             p = all_p[attr_idx]
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[idx])
 
     def guide(self, data):
         sample_size = self.sample_size
@@ -778,7 +779,7 @@ class VaeCHoDina(VCHoDina):
 
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.encoder = MvnEncoder(self.item_size, 1, hidden_dim)
+        self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
 
     def guide(self, data):
         sample_size = self.sample_size

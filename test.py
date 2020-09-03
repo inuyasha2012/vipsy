@@ -102,7 +102,7 @@ class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
         return {'lr': 2e-3}
 
 
-class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
+class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
     # 多维项目反应理论
 
     def setUp(self):
@@ -120,7 +120,7 @@ class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
             x_low = x_low[1:len(x_low)]
             x_up = x_up[1:len(x_up)]
             x_sum = x_sum - temp
-            Irt2PLManyMultiDimTestCase.generate_randval(x_low, x_up, x_sum, y)
+            IrtMultiDimTestCase.generate_randval(x_low, x_up, x_sum, y)
 
     def gen_omega(self, x_feature):
         x_low = [0 for _ in range(x_feature)]
@@ -157,9 +157,9 @@ class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         y = random_instance.y
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature)
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': self.optim,
+                                 'optim_args': self.optim_2PL_100_dim,
                                  'milestones': [
-                                     # int(sample_size / subsample_size) * 50,
+                                     int(sample_size / subsample_size) * 50,
                                      int(sample_size / subsample_size) * 60
                                  ],
                                  'gamma': 0.1,
@@ -167,14 +167,22 @@ class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 70), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
-    def test_ai_100_dim_3pl(self):
-        sample_size = 10000
+    @staticmethod
+    def optim_2PL(module_name, param_name):
+        if param_name == 'a':
+            return {'lr': 1e-1}
+        if param_name == 'b':
+            return {'lr': 1e-1}
+        return {'lr': 1e-3}
+
+    def test_ai_5_dim_3pl(self):
+        sample_size = 7000
         subsample_size = 100
-        item_size = 500
-        x_feature = 100
+        item_size = 20
+        x_feature = 5
         random_instance = RandomIrt3PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        mdiff = torch.FloatTensor(item_size).normal_(0, 1)
+        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
         logit_c = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
         c = 1 / (1 + torch.exp(-logit_c))
         a = self.gen_a(item_size, mdisc, x_feature)
@@ -185,24 +193,32 @@ class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         y = random_instance.y
         model = VaeIRT(data=y, model='irt_3pl', subsample_size=subsample_size, x_feature=x_feature)
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': self.optim,
+                                 'optim_args': self.optim_3PL_10_dim,
                                  'milestones': [
-                                     # int(sample_size / subsample_size) * 50,
-                                     int(sample_size / subsample_size) * 60
+                                     int(sample_size / subsample_size) * 50,
+                                     # int(sample_size / subsample_size) * 400
                                  ],
                                  'gamma': 0.1,
                                  })
-        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 70), random_instance=random_instance,
+        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 200), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
-    def test_ai_100_dim_4pl(self):
+    @staticmethod
+    def optim_3PL(module_name, param_name):
+        if param_name == 'a':
+            return {'lr': 1e-1}
+        if param_name == 'b':
+            return {'lr': 1e-1}
+        return {'lr': 1e-3}
+
+    def test_ai_10_dim_4pl(self):
         sample_size = 10000
         subsample_size = 100
-        item_size = 500
-        x_feature = 100
+        item_size = 20
+        x_feature = 5
         random_instance = RandomIrt4PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        mdiff = torch.FloatTensor(item_size).normal_(0, 1)
+        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
         logit_c = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
         logit_d = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
         c = 1 / (1 + torch.exp(-logit_c))
@@ -216,22 +232,22 @@ class Irt2PLManyMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         y = random_instance.y
         model = VaeIRT(data=y, model='irt_4pl', subsample_size=subsample_size, x_feature=x_feature)
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': self.optim,
+                                 'optim_args': self.optim_4PL,
                                  'milestones': [
-                                     # int(sample_size / subsample_size) * 50,
-                                     int(sample_size / subsample_size) * 60
+                                     int(sample_size / subsample_size) * 400,
+                                     # int(sample_size / subsample_size) * 400
                                  ],
                                  'gamma': 0.1,
                                  })
-        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 70), random_instance=random_instance,
+        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 500), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
     @staticmethod
-    def optim(module_name, param_name):
+    def optim_4PL(module_name, param_name):
         if param_name == 'a':
-            return {'lr': 1e-1}
+            return {'lr': 1e-2}
         if param_name == 'b':
-            return {'lr': 1e-1}
+            return {'lr': 1e-2}
         return {'lr': 1e-3}
 
     def test_cfa(self):
@@ -283,12 +299,12 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
 class CDMRandomMixin(object):
 
-    def gen_sample(self, random_class, sample_size):
-        random_instance = random_class(sample_size=sample_size)
+    def gen_sample(self, random_class, sample_size, **kwargs):
+        random_instance = random_class(sample_size=sample_size, **kwargs)
         y = random_instance.y
         q = random_instance.q
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_q.txt', q.numpy())
+        # np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
+        # np.savetxt(f'{random_class.name or "data"}_{sample_size}_q.txt', q.numpy())
         if self.cuda:
             y = y.cuda()
             q = q.cuda()
@@ -372,4 +388,4 @@ class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomHoDina, 100000)
         model = VaeCHoDina(data=y, q=q, subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}))
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))

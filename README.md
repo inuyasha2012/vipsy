@@ -23,5 +23,49 @@ vipsy是《变分推断在计量心理模型中的应用(variational inference f
 - HO-DINA模型
 - 缺失数据认知诊断模型
 
-
+# 代码示例
+四参数IRT模型，基于黑盒变分推断
+```shell script
+$ python -m unittest test.Irt4PLTestCase.test_bbvi 
+```
+四参数IRT模型，基于Amortized Variational Inference
+```shell script
+$ python -m unittest test.Irt4PLTestCase.test_ai
+```
+100个维度的多维项目反应理论模型，基于Amortized Variational Inference
+```shell script
+$ python -m unittest test.IrtMultiDimTestCase.test_ai_100_dim_2pl
+```
+缺失数据项目反应理论模型，缺失90%的数据（即仅有10%的数据有效）
+```shell script
+$ python -m unittest test.Irt2PLMissingTestCase.test_ai
+```
+4参数多维项目反应理论模型，5个维度
+```shell script
+$ python -m unittest test.IrtMultiDimTestCase.test_ai_10_dim_4pl
+```
+DINA模型，基于黑盒变分推断
+```shell script
+$ python -m unittest test.DinaTestCase.test_bbvi
+```
+DINA模型，基于Amortized Variational Inference
+```shell script
+$ python -m unittest test.DinaTestCase.test_ai
+```
+DINA模型，基于离散潜变量黑盒变分推断
+```shell script
+$ python -m unittest test.PaDinaTestCase.test_bbvi
+```
+DINA模型，基于离散潜变量Amortized Variational Inference
+```shell script
+$ python -m unittest test.PaDinaTestCase.test_ai
+```
+HO-DINA模型，基于离散潜变量黑盒变分推断
+```shell script
+python -m unittest test.PaHoDinaTestCase.test_bbvi
+```
+HO-DINA模型，基于离散潜变量Amortized Variational Inference
+```shell script
+python -m unittest test.PaHoDinaTestCase.test_ai
+```
 更多测试用例详见[测试文件](https://github.com/inuyasha2012/virt/blob/master/test.py)
