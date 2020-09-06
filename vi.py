@@ -145,6 +145,11 @@ class RandomDina(RandomPsyData):
         super().__init__(*args, **kwargs)
         self.q_size = q_size
         self.q = torch.FloatTensor(q_size, self.item_size).bernoulli_(q_p)
+        q_eye = torch.eye(q_size)
+        q_sum = self.q.sum(0)
+        if torch.any(q_sum == 0):
+            idx = dist.Categorical(torch.zeros(q_size) + 1).sample((self.q[:, q_sum == 0].size(1),))
+            self.q[:, q_sum == 0] = q_eye[idx].T
         self.attr = torch.FloatTensor(self.sample_size, q_size).bernoulli_(attr_p)
         self.g = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
         self.s = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
@@ -233,8 +238,8 @@ class RandomIrt2PL(RandomIrt1PL):
 
     def __init__(
             self,
-            a_lower=1,
-            a_upper=3,
+            a_lower=0,
+            a_upper=1,
             *args,
             **kwargs
     ):
@@ -339,11 +344,11 @@ class BinEncoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, x_dim)
-        self.relu = nn.ReLU()
+        self.softplus = nn.Softplus()
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        hidden = self.relu(self.fc1(x))
+        hidden = self.softplus(self.fc1(x))
         p = self.sigmoid(self.fc2(hidden))
         return p
 
@@ -607,6 +612,8 @@ class BaseCDM(BasePsy):
                 t.set_description(f'迭代：{i}')
                 svi.step(self.data)
                 loss = svi.evaluate_loss(self.data)
+                if isinstance(optim, PyroLRScheduler):
+                    optim.step()
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
@@ -681,7 +688,12 @@ class VCCDM(BaseCDM):
                 dist.Categorical(torch.zeros((len(idx), self.all_attr.size(0))) + 1 / self.all_attr.size(0)).to_event(0)
             )
             p = all_p[attr_idx]
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[idx])
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
+                p = torch.where(data_nan, torch.full_like(p, 0), p)
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
     def guide(self, data):
         pass
@@ -705,13 +717,17 @@ class VaeCCDM(VCCDM):
         pyro.module('encoder', self.encoder)
         all_p = self.CDM_FUN[self._model](self.all_attr, self.q, g, s)
         with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
-            attr_p = self.encoder.forward(data[idx])
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+            attr_p = self.encoder.forward(data_)
             attr_idx = pyro.sample(
                 'attr_idx',
                 dist.Categorical(attr_p).to_event(0)
             )
             p = all_p[attr_idx]
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[idx])
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
 
 class VCHoDina(VCCDM):
@@ -738,7 +754,12 @@ class VCHoDina(VCCDM):
                 dist.Categorical(likelihood_attr_p).to_event(0)
             )
             p = all_p[attr_idx]
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[idx])
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
+                p = torch.where(data_nan, torch.full_like(p, 0), p)
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
     def guide(self, data):
         sample_size = self.sample_size
@@ -758,6 +779,8 @@ class VCHoDina(VCCDM):
                 t.set_description(f'迭代：{i}')
                 svi.step(self.data)
                 loss = svi.evaluate_loss(self.data)
+                if isinstance(optim, PyroLRScheduler):
+                    optim.step()
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
@@ -786,7 +809,11 @@ class VaeCHoDina(VCHoDina):
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
         with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
-            theta_local, theta_scale = self.encoder.forward(data[idx])
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+            theta_local, theta_scale = self.encoder.forward(data_)
             pyro.sample(
                 'theta',
                 dist.Normal(theta_local, theta_scale).to_event(1)
