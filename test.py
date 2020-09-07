@@ -132,14 +132,15 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         for j in range(item_size):
             if j < item_size - x_feature + 1:
                 sigma = self.gen_omega(x_feature)
-                # sigma = np.random.dirichlet([random.random() for _ in range(x_feature)])
                 a[:, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+                a[a < 0.01] = 0.01
             else:
                 x_size = item_size - j
                 sigma = self.gen_omega(x_size)
-                # sigma = np.random.dirichlet([1 for _ in range(x_size)])
                 a[:x_size, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
-        a[a < 0] = 0
+                a[a < 0.01] = 0.01
+        for i in range(x_feature):
+            a[i, item_size - i:] = 0
         return a
 
     def test_ai_100_dim_2pl(self):
@@ -159,12 +160,12 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
                                  'optim_args': self.optim_2PL,
                                  'milestones': [
-                                     int(sample_size / subsample_size) * 50,
-                                     int(sample_size / subsample_size) * 60
+                                     # int(sample_size / subsample_size) * 50,
+                                     int(sample_size / subsample_size) * 190
                                  ],
                                  'gamma': 0.1,
                                  })
-        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 70), random_instance=random_instance,
+        model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 200), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
     @staticmethod
@@ -176,10 +177,10 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         return {'lr': 1e-3}
 
     def test_ai_5_dim_3pl(self):
-        sample_size = 7000
-        subsample_size = 100
-        item_size = 20
-        x_feature = 5
+        sample_size = 10000
+        subsample_size = 20
+        item_size = 50
+        x_feature = 10
         random_instance = RandomIrt3PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
         mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
@@ -195,7 +196,7 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
                                  'optim_args': self.optim_3PL,
                                  'milestones': [
-                                     int(sample_size / subsample_size) * 50,
+                                     int(sample_size / subsample_size) * 190,
                                      # int(sample_size / subsample_size) * 400
                                  ],
                                  'gamma': 0.1,
@@ -269,14 +270,25 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
     def test_ai_5_dim(self):
         sample_size = 10000
         subsample_size = 100
-        item_size = 500
-        x_feature = 100
+        item_size = 50
+        x_feature = 10
         random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         for i in range(x_feature):
             random_instance.a[i, item_size - i:] = 0
-        y = random_instance.y
-        model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature, hidden_dim=512)
-        model.fit(optim=Adam(self.optim_2PL), max_iter=int(sample_size / subsample_size * 100000), random_instance=random_instance,
+        # y = random_instance.y.cuda()
+        # random_instance.a = random_instance.a.cuda()
+        # random_instance.b = random_instance.b.cuda()
+        model = VaeIRT(data=random_instance.y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature,
+                       hidden_dim=256)
+
+        def optim(_, param_name):
+            if param_name == 'a':
+                return {'lr': 1e-3}
+            if param_name == 'b':
+                return {'lr': 1e-2}
+            return {'lr': 1e-3}
+
+        model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 10000), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
 

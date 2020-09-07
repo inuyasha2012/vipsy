@@ -238,8 +238,8 @@ class RandomIrt2PL(RandomIrt1PL):
 
     def __init__(
             self,
-            a_lower=0,
-            a_upper=1,
+            a_lower=0.5,
+            a_upper=3,
             *args,
             **kwargs
     ):
