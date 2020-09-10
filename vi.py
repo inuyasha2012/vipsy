@@ -600,7 +600,7 @@ class BaseCDM(BasePsy):
         with pyro.plate("data", sample_size) as ind:
             attr = pyro.sample(
                 'attr',
-                dist.Bernoulli(torch.zeros((len(ind), self.attr_size)) + 0.5).to_event(1)
+                dist.Bernoulli(torch.ones((len(ind), self.attr_size)) + 0.5).to_event(1)
             )
             p = self.CDM_FUN[self._model](attr, self.q, g, s)
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])

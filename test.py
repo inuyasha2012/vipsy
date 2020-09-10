@@ -3,12 +3,14 @@ import random
 from unittest import TestCase
 
 import numpy as np
-from pyro.infer import Trace_ELBO, TraceEnum_ELBO
+import pyro
+from pyro.infer import Trace_ELBO, TraceEnum_ELBO, HMC, NUTS, MCMC
 from pyro.optim import Adam, StepLR, MultiStepLR, PyroLRScheduler
 import torch
 # from sklearn.impute import KNNImputer
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
+from pyro import distributions as dist
 
 
 class TestMixin(object):
@@ -23,9 +25,13 @@ class TestMixin(object):
 class IRTRandomMixin(object):
 
     def gen_sample(self, random_class, sample_size, **kwargs):
+        # if 'file_index' in kwargs:
+        i = kwargs.pop('file_index', None)
         random_instance = random_class(sample_size=sample_size, **kwargs)
         y = random_instance.y
-        # np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_{i}.txt', y.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_a_{i}.txt', random_instance.a.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_b_{i}.txt', random_instance.b.numpy())
         if self.cuda:
             y = y.cuda()
             random_instance.a = random_instance.a.cuda()
@@ -63,6 +69,18 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
+
+    def test_ai_iter_10(self):
+        for i in range(10):
+            item_size = 50
+            y, random_instance = self.gen_sample(RandomIrt2PL, 100, item_size=item_size, file_index=i)
+            model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+            model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=20000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            print('a:{0}'.format((a - random_instance.a).pow(2).sqrt().sum() / item_size))
+            print('b:{0}'.format((b - random_instance.b).pow(2).sqrt().mean()))
+            pyro.clear_param_store()
 
 
 class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -271,24 +289,34 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         sample_size = 10000
         subsample_size = 100
         item_size = 50
-        x_feature = 10
+        x_feature = 2
         random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         for i in range(x_feature):
             random_instance.a[i, item_size - i:] = 0
         # y = random_instance.y.cuda()
         # random_instance.a = random_instance.a.cuda()
         # random_instance.b = random_instance.b.cuda()
-        model = VaeIRT(data=random_instance.y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature,
-                       hidden_dim=256)
+        scale_tril = torch.eye(x_feature)
+        scale_tril[0, 1] = scale_tril[1, 0] = 0.7
+        random_instance.x = dist.MultivariateNormal(
+                            torch.zeros((sample_size, x_feature)),
+                            scale_tril=scale_tril
+                        ).sample()
+        y = random_instance.y
+        np.savetxt(f'irt_2pl_{sample_size}.txt', y.numpy())
+        np.savetxt(f'irt_2pl_{sample_size}_a.txt', random_instance.a.T.numpy())
+        np.savetxt(f'irt_2pl_{sample_size}_b.txt', random_instance.b.T.numpy())
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature,
+                       hidden_dim=64)
 
         def optim(_, param_name):
             if param_name == 'a':
-                return {'lr': 1e-3}
+                return {'lr': 1e-4}
             if param_name == 'b':
-                return {'lr': 1e-2}
-            return {'lr': 1e-3}
+                return {'lr': 1e-3}
+            return {'lr': 1e-4}
 
-        model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 10000), random_instance=random_instance,
+        model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 100000), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
 
@@ -303,9 +331,9 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt3PL, 1000000)
+        y, random_instance = self.gen_sample(RandomIrt3PL, 100)
         model = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 5e-3}), max_iter=50000)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-4}), max_iter=50000)
 
 
 class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -363,15 +391,15 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))
 
     def test_ai(self):
-        y, q, random_instance = self.gen_sample(RandomDina, 10000, q_size=10, item_size=2000)
-        model = VaeCDM(data=y, q=q, model='dina', subsample_size=20)
+        y, q, random_instance = self.gen_sample(RandomDina, 10000, q_size=20, item_size=2000)
+        model = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam(self.optim_ai), max_iter=100000)
 
     @staticmethod
     def optim_ai(_, param_name):
-        if param_name in ('g', 's'):
+        if param_name in ('g'):
             return {"lr": 1e-3}
-        return {'lr': 1e-3}
+        return {'lr': 5e-4}
 
 
 class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
