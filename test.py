@@ -25,13 +25,13 @@ class TestMixin(object):
 class IRTRandomMixin(object):
 
     def gen_sample(self, random_class, sample_size, **kwargs):
-        # if 'file_index' in kwargs:
-        i = kwargs.pop('file_index', None)
+        i = kwargs.pop('file_index', '')
         random_instance = random_class(sample_size=sample_size, **kwargs)
         y = random_instance.y
         np.savetxt(f'{random_class.name or "data"}_{sample_size}_{i}.txt', y.numpy())
         np.savetxt(f'{random_class.name or "data"}_{sample_size}_a_{i}.txt', random_instance.a.numpy())
         np.savetxt(f'{random_class.name or "data"}_{sample_size}_b_{i}.txt', random_instance.b.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_c_{i}.txt', random_instance.c.numpy())
         if self.cuda:
             y = y.cuda()
             random_instance.a = random_instance.a.cuda()
@@ -70,17 +70,122 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
-    def test_ai_iter_10(self):
+    def test_bbvi_iter_10_item_50_sample_100(self):
+        for i in range(10):
+            y = torch.from_numpy(np.loadtxt(f'irt_2pl_100_{i}.txt')).float()
+            b = torch.from_numpy(np.loadtxt(f'irt_2pl_100_b_{i}.txt'))
+            a = torch.from_numpy(np.loadtxt(f'irt_2pl_100_a_{i}.txt'))
+            r = RandomIrt2PL()
+            r.a = a.T
+            r.b = b.T
+            model = VIRT(data=y, model='irt_2pl')
+            model.fit(random_instance=r, optim=Adam({'lr': 1e-2}), max_iter=10000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            print('a:{0}'.format((a - r.a).pow(2).sqrt().sum() / 50))
+            print('b:{0}'.format((b - r.b).pow(2).sqrt().mean()))
+            pyro.clear_param_store()
+
+    def test_bbvi_iter_10_item_100_sample_200(self):
+        a_rmse_l = []
+        b_rmse_l = []
+        for i in range(10):
+            y = torch.from_numpy(np.loadtxt(f'irt_2pl_200_{i}.txt')).float()
+            b = torch.from_numpy(np.loadtxt(f'irt_2pl_200_b_{i}.txt'))
+            a = torch.from_numpy(np.loadtxt(f'irt_2pl_200_a_{i}.txt'))
+            r = RandomIrt2PL()
+            r.a = a.T
+            r.b = b.T
+            model = VIRT(data=y, model='irt_2pl')
+            model.fit(random_instance=r, optim=Adam({'lr': 1e-3}), max_iter=20000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            a_rmse = (a - r.a).pow(2).sqrt().sum() / y.shape[1]
+            a_rmse_l.append(a_rmse.item())
+            print('a:{0}'.format(a_rmse))
+            b_rmse = (b - r.b).pow(2).sqrt().mean()
+            b_rmse_l.append(b_rmse.item())
+            print('b:{0}'.format(b_rmse))
+            pyro.clear_param_store()
+        print(f'a_mean:{np.mean(a_rmse_l)}')
+        print(f'a_std:{np.std(a_rmse_l)}')
+        print(f'b_mean:{np.mean(b_rmse_l)}')
+        print(f'b_std:{np.std(b_rmse_l)}')
+
+    def test_bbvi_iter_10_item_50_sample_500(self):
+        a_rmse_l = []
+        b_rmse_l = []
+        for i in range(10):
+            y = torch.from_numpy(np.loadtxt(f'irt_2pl_500_{i}.txt')).float()
+            b = torch.from_numpy(np.loadtxt(f'irt_2pl_500_b_{i}.txt'))
+            a = torch.from_numpy(np.loadtxt(f'irt_2pl_500_a_{i}.txt'))
+            r = RandomIrt2PL()
+            r.a = a.T
+            r.b = b.T
+            model = VIRT(data=y, model='irt_2pl')
+            model.fit(random_instance=r, optim=Adam({'lr': 1e-2}), max_iter=10000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            a_rmse = (a - r.a).pow(2).sqrt().sum() / y.shape[1]
+            a_rmse_l.append(a_rmse.item())
+            print('a:{0}'.format(a_rmse))
+            b_rmse = (b - r.b).pow(2).sqrt().mean()
+            b_rmse_l.append(b_rmse.item())
+            print('b:{0}'.format(b_rmse))
+            pyro.clear_param_store()
+        print(f'a_mean:{np.mean(a_rmse_l)}')
+        print(f'a_std:{np.std(a_rmse_l)}')
+        print(f'b_mean:{np.mean(b_rmse_l)}')
+        print(f'b_std:{np.std(b_rmse_l)}')
+
+    def test_ai_iter_10_item_50_sample_100(self):
         for i in range(10):
             item_size = 50
-            y, random_instance = self.gen_sample(RandomIrt2PL, 100, item_size=item_size, file_index=i)
-            model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+            sample_size = 100
+            y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, item_size=item_size, file_index=i)
+            model = VaeIRT(data=y, model='irt_2pl', subsample_size=20)
             model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=20000)
             a = pyro.param('a')
             b = pyro.param('b')
             print('a:{0}'.format((a - random_instance.a).pow(2).sqrt().sum() / item_size))
             print('b:{0}'.format((b - random_instance.b).pow(2).sqrt().mean()))
             pyro.clear_param_store()
+
+    def test_ai_iter_10_item_100_sample_200(self):
+        for i in range(10):
+            item_size = 100
+            sample_size = 200
+            y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, item_size=item_size, file_index=i)
+            model = VaeIRT(data=y, model='irt_2pl', subsample_size=20)
+            model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=20000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            print('a:{0}'.format((a - random_instance.a).pow(2).sqrt().sum() / item_size))
+            print('b:{0}'.format((b - random_instance.b).pow(2).sqrt().mean()))
+            pyro.clear_param_store()
+
+    def test_ai_iter_10_item_50_sample_500(self):
+        a_rmse_l = []
+        b_rmse_l = []
+        for i in range(10):
+            item_size = 50
+            sample_size = 500
+            y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, item_size=item_size, file_index=i)
+            model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+            model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=10000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            a_rmse = (a - random_instance.a).pow(2).sqrt().sum() / item_size
+            a_rmse_l.append(a_rmse.item())
+            b_rmse = (b - random_instance.b).pow(2).sqrt().mean()
+            b_rmse_l.append(b_rmse.item())
+            print('a:{0}'.format(a_rmse))
+            print('b:{0}'.format(b_rmse))
+            pyro.clear_param_store()
+        print(f'a_mean:{np.mean(a_rmse_l)}')
+        print(f'a_std:{np.std(a_rmse_l)}')
+        print(f'b_mean:{np.mean(b_rmse_l)}')
+        print(f'b_std:{np.std(b_rmse_l)}')
 
 
 class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -103,7 +208,12 @@ class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
-        y, random_instance = self.gen_missing_y(sample_size=100000, missing_rate=0.95, item_size=5000)
+        random_class = RandomIrt2PL
+        sample_size = 1000
+        y, random_instance = self.gen_missing_y(sample_size=sample_size, missing_rate=0.9, item_size=1000)
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}.txt', y.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_a.txt', random_instance.a.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_b.txt', random_instance.b.numpy())
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam(self.optim), max_iter=100000)
 
@@ -334,6 +444,42 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         y, random_instance = self.gen_sample(RandomIrt3PL, 100)
         model = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-4}), max_iter=50000)
+
+    def test_ai_iter_10_item_50_sample_500(self):
+        a_rmse_l = []
+        b_rmse_l = []
+        c_rmse_l = []
+        for i in range(10):
+            item_size = 50
+            sample_size = 500
+            y, random_instance = self.gen_sample(RandomIrt3PL, sample_size, item_size=item_size, file_index=i)
+            model = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
+
+            def optim(_, pn):
+                if pn in ('a', 'b'):
+                    return {'lr': 1e-3}
+                return {'lr': 1e-3}
+
+            model.fit(random_instance=random_instance, optim=Adam(optim), max_iter=10000)
+            a = pyro.param('a')
+            b = pyro.param('b')
+            c = pyro.param('c')
+            a_rmse = (a - random_instance.a).pow(2).sqrt().sum() / item_size
+            a_rmse_l.append(a_rmse.item())
+            b_rmse = (b - random_instance.b).pow(2).sqrt().mean()
+            b_rmse_l.append(b_rmse.item())
+            c_rmse = (c - random_instance.c).pow(2).sqrt().mean()
+            c_rmse_l.append(c_rmse.item())
+            print('a:{0}'.format(a_rmse))
+            print('b:{0}'.format(b_rmse))
+            print('c:{0}'.format(c_rmse))
+            pyro.clear_param_store()
+        print(f'a_mean:{np.mean(a_rmse_l)}')
+        print(f'a_std:{np.std(a_rmse_l)}')
+        print(f'b_mean:{np.mean(b_rmse_l)}')
+        print(f'b_std:{np.std(b_rmse_l)}')
+        print(f'c_mean:{np.mean(c_rmse_l)}')
+        print(f'c_std:{np.std(c_rmse_l)}')
 
 
 class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
