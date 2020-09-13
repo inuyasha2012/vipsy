@@ -1,4 +1,5 @@
 import math
+import random
 from math import nan
 
 import numpy as np
@@ -18,7 +19,7 @@ from tqdm import trange
 # ======心理测量模型 start=============
 
 
-def irt_1pl(x, b, D):
+def irt_1pl(x, b, D=1):
     """
     单参数IRT模型
     :param x: 潜变量
@@ -209,6 +210,7 @@ class RandomIrt1PL(RandomPsyData):
             x_scale=1,
             b_local=0,
             b_scale=1,
+            D=1,
             *args,
             **kwargs
     ):
@@ -225,10 +227,11 @@ class RandomIrt1PL(RandomPsyData):
         self.x_feature = x_feature
         self.x = torch.FloatTensor(self.sample_size, x_feature).normal_(x_local, x_scale)
         self.b = torch.FloatTensor(1, self.item_size).normal_(b_local, b_scale)
+        self.D = D
 
     @property
     def y(self):
-        p = irt_1pl(self.x, self.b)
+        p = irt_1pl(self.x, self.b, self.D)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
@@ -251,10 +254,13 @@ class RandomIrt2PL(RandomIrt1PL):
         """
         super(RandomIrt2PL, self).__init__(*args, **kwargs)
         self.a = torch.FloatTensor(self.x_feature, self.item_size).uniform_(a_lower, a_upper)
+        for i in range(self.x_feature):
+            self.a[i, self.item_size - i:] = 0
+
 
     @property
     def y(self):
-        p = irt_2pl(self.x, self.a, self.b)
+        p = irt_2pl(self.x, self.a, self.b, self.D)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
@@ -274,7 +280,7 @@ class RandomIrt3PL(RandomIrt2PL):
 
     @property
     def y(self):
-        p = irt_3pl(self.x, self.a, self.b, self.c)
+        p = irt_3pl(self.x, self.a, self.b, self.c, self.D)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
@@ -294,7 +300,109 @@ class RandomIrt4PL(RandomIrt3PL):
 
     @property
     def y(self):
-        p = irt_4pl(self.x, self.a, self.b, self.c, self.d)
+        p = irt_4pl(self.x, self.a, self.b, self.c, self.d, self.D)
+        return torch.FloatTensor(*p.size()).bernoulli_(p)
+
+
+class RandomMilIrt2PL(RandomPsyData):
+
+    name = 'irt_2pl'
+
+    def __init__(
+            self,
+            mdisc_log_local=0,
+            mdisc_log_scale=0.5,
+            mdiff_local=0.5,
+            mdiff_scale=1,
+            x_feature=2,
+            x_local=torch.zeros((2,)),
+            x_cov=torch.eye(2),
+            D=1,
+            *args,
+            **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        mdisc = torch.FloatTensor(self.item_size).log_normal_(mdisc_log_local, mdisc_log_scale)
+        mdiff = torch.FloatTensor(self.item_size).normal_(mdiff_local, mdiff_scale)
+        self.a = self.gen_a(self.item_size, mdisc, x_feature)
+        b = -mdiff * mdisc
+        self.b = b.view(1, -1)
+        self.x_feature = x_feature
+        self.x = dist.MultivariateNormal(x_local, x_cov).sample((self.sample_size,))
+        self.D = D
+
+    @property
+    def y(self):
+        p = irt_2pl(self.x, self.a, self.b, self.D)
+        return torch.FloatTensor(*p.size()).bernoulli_(p)
+
+    @staticmethod
+    def generate_randval(x_low, x_up, x_sum, y):
+        # https://blog.csdn.net/maintony/article/details/88540320
+        if len(x_low) == 1:
+            y.append(x_sum)
+        else:
+            a = max(x_sum - sum(x_up[1:len(x_up)]), x_low[0])
+            b = min(x_sum - sum(x_low[1:len(x_low)]), x_up[0])
+            temp = random.uniform(a, b)
+            y.append(temp)
+            x_low = x_low[1:len(x_low)]
+            x_up = x_up[1:len(x_up)]
+            x_sum = x_sum - temp
+            RandomMilIrt2PL.generate_randval(x_low, x_up, x_sum, y)
+
+    def gen_omega(self, x_feature):
+        x_low = [0 for _ in range(x_feature)]
+        x_up = [np.pi / 2 for _ in range(x_feature)]
+        x_sum = np.pi / 2 * (x_feature - 1)
+        omega = []
+        self.generate_randval(x_low, x_up, x_sum, omega)
+        return omega
+
+    def gen_a(self, item_size, mdisc, x_feature):
+        a = torch.zeros((x_feature, item_size))
+        for j in range(item_size):
+            if j < item_size - x_feature + 1:
+                sigma = self.gen_omega(x_feature)
+                a[:, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+                a[a < 0.01] = 0.01
+            else:
+                x_size = item_size - j
+                sigma = self.gen_omega(x_size)
+                a[:x_size, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
+                a[a < 0.01] = 0.01
+        for i in range(x_feature):
+            a[i, item_size - i:] = 0
+        return a
+
+
+class RandomMilIrt3PL(RandomMilIrt2PL):
+
+    name = 'irt_3pl'
+
+    def __init__(self, logit_c_local=-1.39, logit_c_scale=0.16, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        logit_c = torch.FloatTensor(1, self.item_size).normal_(logit_c_local, logit_c_scale)
+        self.c = 1 / (1 + torch.exp(-logit_c))
+
+    @property
+    def y(self):
+        p = irt_3pl(self.x, self.a, self.b, self.c, self.D)
+        return torch.FloatTensor(*p.size()).bernoulli_(p)
+
+
+class RandomMilIrt4PL(RandomMilIrt3PL):
+
+    name = 'irt_4pl'
+
+    def __init__(self, logit_d_local=-1.39, logit_d_scale=0.16, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        logit_d = torch.FloatTensor(1, self.item_size).normal_(logit_d_local, logit_d_scale)
+        self.d = 1 / (1 + torch.exp(logit_d))
+
+    @property
+    def y(self):
+        p = irt_4pl(self.x, self.a, self.b, self.c, self.d, self.D)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 # ======随机数据生成 end===============
@@ -424,7 +532,14 @@ class BaseIRT(BasePsy):
         'irt_4pl': irt_4pl,
     }
 
-    def __init__(self, model='irt_2pl', x_feature=1, share_cov=False, D=1, *args, **kwargs):
+    def __init__(self,
+                 model='irt_2pl',
+                 x_feature=1,
+                 share_cov=False,
+                 D=1,
+                 *args,
+                 **kwargs
+                 ):
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature

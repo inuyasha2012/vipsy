@@ -1,3 +1,4 @@
+from collections import namedtuple
 from math import nan
 import random
 from unittest import TestCase
@@ -9,8 +10,136 @@ from pyro.optim import Adam, StepLR, MultiStepLR, PyroLRScheduler
 import torch
 # from sklearn.impute import KNNImputer
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
-    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina
+    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL
 from pyro import distributions as dist
+
+
+def article_test_load_data_util(
+        file_prefix='irt_2pl_500',
+        try_count=10,
+        vi_class=VaeIRT,
+        vi_class_kwargs=None,
+        vi_fit_kwargs=None,
+):
+    model_name = '_'.join(file_prefix.split('_')[:2])
+    rmse_dt = {}
+    attrs = ['b']
+    if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
+        attrs.append('a')
+    if model_name in ('irt_3pl', 'irt_4pl'):
+        attrs.append('c')
+    if model_name == 'irt_4pl':
+        attrs.append('d')
+    R = namedtuple('R', attrs)
+    for i in range(try_count):
+        y = torch.from_numpy(np.loadtxt(f'{file_prefix}_{i}.txt')).float()
+        item_size = y.size(1)
+        r_kwargs = {}
+        b = torch.from_numpy(np.loadtxt(f'{file_prefix}_b_{i}.txt'))
+        r_kwargs['b'] = b.T
+        if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
+            a = torch.from_numpy(np.loadtxt(f'{file_prefix}_a_{i}.txt'))
+            r_kwargs['a'] = a.T
+        if model_name in ('irt_3pl', 'irt_4pl'):
+            c = torch.from_numpy(np.loadtxt(f'{file_prefix}_c_{i}.txt'))
+            r_kwargs['c'] = c.T
+        if model_name == 'irt_4pl':
+            d = torch.from_numpy(np.loadtxt(f'{file_prefix}_d_{i}.txt'))
+            r_kwargs['d'] = d.T
+        r = R(**r_kwargs)
+        if len(r.a.size()) == 2:
+            x_feature = r.a.size(0)
+        else:
+            x_feature = 1
+        vi_class_kwargs_ = {'data': y, 'model': model_name, 'x_feature': x_feature}
+        if vi_class_kwargs is not None:
+            vi_class_kwargs_.update(vi_class_kwargs)
+        vi_model = vi_class(**vi_class_kwargs_)
+        vi_fit_kwargs_ = {'optim': Adam({'lr': 1e-2}), 'max_iter': 10000}
+        if vi_fit_kwargs is not None:
+            vi_fit_kwargs_.update(vi_fit_kwargs)
+        vi_model.fit(random_instance=r, **vi_fit_kwargs_)
+        rmse_(item_size, model_name, r, rmse_dt, x_feature)
+        pyro.clear_param_store()
+    for key, val in rmse_dt.items():
+        print(f'{key}_mean:{np.mean(val)}')
+        print(f'{key}_std:{np.std(val)}')
+
+
+def rmse_(item_size, model_name, r, rmse_dt, x_feature):
+    if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
+        a = pyro.param('a')
+        a_rmse = (a - r.a).pow(2).sqrt().sum() / (x_feature * item_size - x_feature * (x_feature - 1) / 2)
+        if 'a' not in rmse_dt:
+            rmse_dt['a'] = [a_rmse.item()]
+        else:
+            rmse_dt['a'].append(a_rmse.item())
+        print('a:{0}'.format(a_rmse))
+    b = pyro.param('b')
+    b_rmse = (b - r.b).pow(2).sqrt().mean()
+    if 'b' not in rmse_dt:
+        rmse_dt['b'] = [b_rmse.item()]
+    else:
+        rmse_dt['b'].append(b_rmse.item())
+    print('b:{0}'.format(b_rmse))
+    if model_name in ('irt_3pl', 'irt_4pl'):
+        c = pyro.param('c')
+        c_rmse = (c - r.c).pow(2).sqrt().mean()
+        print('c:{0}'.format(c_rmse))
+        if 'c' not in rmse_dt:
+            rmse_dt['c'] = [c_rmse.item()]
+        else:
+            rmse_dt['c'].append(c_rmse.item())
+    if model_name == 'irt_4pl':
+        d = pyro.param('d')
+        d_rmse = (d - r.d).pow(2).sqrt().mean()
+        print('d:{0}'.format(d_rmse))
+        if 'd' not in rmse_dt:
+            rmse_dt['d'] = [d_rmse.item()]
+        else:
+            rmse_dt['d'].append(d_rmse.item())
+
+
+def article_test_util(
+        sample_size=500,
+        item_size=50,
+        try_count=10,
+        vi_class=VaeIRT,
+        vi_class_kwargs=None,
+        vi_fit_kwargs=None,
+        random_class=RandomIrt2PL,
+        random_class_kwargs=None,
+):
+    model_name = random_class.name
+    rmse_dt = {}
+    for i in range(try_count):
+        random_class_kwargs_ = {'sample_size': sample_size, 'item_size': item_size}
+        if random_class_kwargs is not None:
+            random_class_kwargs_.update(random_class_kwargs)
+        r = random_class(**random_class_kwargs_)
+        y = r.y
+        x_feature = r.x.size(1)
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_{i}.txt', y.numpy())
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_b_{i}.txt', r.b.numpy())
+        if hasattr(r, 'a'):
+            np.savetxt(f'{random_class.name or "data"}_{sample_size}_a_{i}.txt', r.a.T.numpy())
+        if hasattr(r, 'c'):
+            np.savetxt(f'{random_class.name or "data"}_{sample_size}_c_{i}.txt', r.c.T.numpy())
+        if hasattr(r, 'd'):
+            np.savetxt(f'{random_class.name or "data"}_{sample_size}_d_{i}.txt', r.d.T.numpy())
+        vi_class_kwargs_ = {'data':y, 'model': model_name, 'subsample_size': 100, 'x_feature': x_feature }
+        if vi_class_kwargs is not None:
+            vi_class_kwargs_.update(vi_class_kwargs)
+        vi_model = vi_class(**vi_class_kwargs_)
+        vi_fit_kwargs_ = {'optim': Adam({'lr': 1e-2}), 'max_iter': 10000}
+        if vi_fit_kwargs is not None:
+            vi_fit_kwargs_.update(vi_fit_kwargs)
+        vi_model.fit(random_instance=r, **vi_fit_kwargs_)
+        rmse_(item_size, model_name, r, rmse_dt, x_feature)
+        pyro.clear_param_store()
+    for key, val in rmse_dt.items():
+        print(f'{key}_mean:{np.mean(val)}')
+        print(f'{key}_std:{np.std(val)}')
 
 
 class TestMixin(object):
@@ -25,13 +154,8 @@ class TestMixin(object):
 class IRTRandomMixin(object):
 
     def gen_sample(self, random_class, sample_size, **kwargs):
-        i = kwargs.pop('file_index', '')
         random_instance = random_class(sample_size=sample_size, **kwargs)
         y = random_instance.y
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_{i}.txt', y.numpy())
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_a_{i}.txt', random_instance.a.numpy())
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_b_{i}.txt', random_instance.b.numpy())
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_c_{i}.txt', random_instance.c.numpy())
         if self.cuda:
             y = y.cuda()
             random_instance.a = random_instance.a.cuda()
@@ -70,122 +194,71 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
-    def test_bbvi_iter_10_item_50_sample_100(self):
-        for i in range(10):
-            y = torch.from_numpy(np.loadtxt(f'irt_2pl_100_{i}.txt')).float()
-            b = torch.from_numpy(np.loadtxt(f'irt_2pl_100_b_{i}.txt'))
-            a = torch.from_numpy(np.loadtxt(f'irt_2pl_100_a_{i}.txt'))
-            r = RandomIrt2PL()
-            r.a = a.T
-            r.b = b.T
-            model = VIRT(data=y, model='irt_2pl')
-            model.fit(random_instance=r, optim=Adam({'lr': 1e-2}), max_iter=10000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            print('a:{0}'.format((a - r.a).pow(2).sqrt().sum() / 50))
-            print('b:{0}'.format((b - r.b).pow(2).sqrt().mean()))
-            pyro.clear_param_store()
+    def test_bbvi_try_10_item_50_sample_100(self):
+        article_test_load_data_util(
+            file_prefix='irt_2pl_100',
+            try_count=10,
+            vi_class=VIRT,
+            vi_class_kwargs=None,
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
+        )
 
-    def test_bbvi_iter_10_item_100_sample_200(self):
-        a_rmse_l = []
-        b_rmse_l = []
-        for i in range(10):
-            y = torch.from_numpy(np.loadtxt(f'irt_2pl_200_{i}.txt')).float()
-            b = torch.from_numpy(np.loadtxt(f'irt_2pl_200_b_{i}.txt'))
-            a = torch.from_numpy(np.loadtxt(f'irt_2pl_200_a_{i}.txt'))
-            r = RandomIrt2PL()
-            r.a = a.T
-            r.b = b.T
-            model = VIRT(data=y, model='irt_2pl')
-            model.fit(random_instance=r, optim=Adam({'lr': 1e-3}), max_iter=20000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            a_rmse = (a - r.a).pow(2).sqrt().sum() / y.shape[1]
-            a_rmse_l.append(a_rmse.item())
-            print('a:{0}'.format(a_rmse))
-            b_rmse = (b - r.b).pow(2).sqrt().mean()
-            b_rmse_l.append(b_rmse.item())
-            print('b:{0}'.format(b_rmse))
-            pyro.clear_param_store()
-        print(f'a_mean:{np.mean(a_rmse_l)}')
-        print(f'a_std:{np.std(a_rmse_l)}')
-        print(f'b_mean:{np.mean(b_rmse_l)}')
-        print(f'b_std:{np.std(b_rmse_l)}')
+    def test_bbvi_try_10_item_100_sample_200(self):
+        article_test_load_data_util(
+            file_prefix='irt_2pl_200',
+            try_count=10,
+            vi_class=VIRT,
+            vi_class_kwargs=None,
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+        )
 
-    def test_bbvi_iter_10_item_50_sample_500(self):
-        a_rmse_l = []
-        b_rmse_l = []
-        for i in range(10):
-            y = torch.from_numpy(np.loadtxt(f'irt_2pl_500_{i}.txt')).float()
-            b = torch.from_numpy(np.loadtxt(f'irt_2pl_500_b_{i}.txt'))
-            a = torch.from_numpy(np.loadtxt(f'irt_2pl_500_a_{i}.txt'))
-            r = RandomIrt2PL()
-            r.a = a.T
-            r.b = b.T
-            model = VIRT(data=y, model='irt_2pl')
-            model.fit(random_instance=r, optim=Adam({'lr': 1e-2}), max_iter=10000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            a_rmse = (a - r.a).pow(2).sqrt().sum() / y.shape[1]
-            a_rmse_l.append(a_rmse.item())
-            print('a:{0}'.format(a_rmse))
-            b_rmse = (b - r.b).pow(2).sqrt().mean()
-            b_rmse_l.append(b_rmse.item())
-            print('b:{0}'.format(b_rmse))
-            pyro.clear_param_store()
-        print(f'a_mean:{np.mean(a_rmse_l)}')
-        print(f'a_std:{np.std(a_rmse_l)}')
-        print(f'b_mean:{np.mean(b_rmse_l)}')
-        print(f'b_std:{np.std(b_rmse_l)}')
+    def test_bbvi_try_10_item_50_sample_500(self):
+        article_test_util(
+            item_size=50,
+            try_count=10,
+            sample_size=500,
+            vi_class=VaeIRT,
+            vi_class_kwargs=None,
+            vi_fit_kwargs=None,
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+        )
 
-    def test_ai_iter_10_item_50_sample_100(self):
-        for i in range(10):
-            item_size = 50
-            sample_size = 100
-            y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, item_size=item_size, file_index=i)
-            model = VaeIRT(data=y, model='irt_2pl', subsample_size=20)
-            model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=20000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            print('a:{0}'.format((a - random_instance.a).pow(2).sqrt().sum() / item_size))
-            print('b:{0}'.format((b - random_instance.b).pow(2).sqrt().mean()))
-            pyro.clear_param_store()
+    def test_ai_try_10_item_50_sample_100(self):
+        article_test_util(
+            sample_size=100,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 20},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+        )
 
-    def test_ai_iter_10_item_100_sample_200(self):
-        for i in range(10):
-            item_size = 100
-            sample_size = 200
-            y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, item_size=item_size, file_index=i)
-            model = VaeIRT(data=y, model='irt_2pl', subsample_size=20)
-            model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=20000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            print('a:{0}'.format((a - random_instance.a).pow(2).sqrt().sum() / item_size))
-            print('b:{0}'.format((b - random_instance.b).pow(2).sqrt().mean()))
-            pyro.clear_param_store()
+    def test_ai_try_10_item_100_sample_200(self):
+        article_test_util(
+            sample_size=200,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 20},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+        )
 
-    def test_ai_iter_10_item_50_sample_500(self):
-        a_rmse_l = []
-        b_rmse_l = []
-        for i in range(10):
-            item_size = 50
-            sample_size = 500
-            y, random_instance = self.gen_sample(RandomIrt2PL, sample_size, item_size=item_size, file_index=i)
-            model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
-            model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}), max_iter=10000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            a_rmse = (a - random_instance.a).pow(2).sqrt().sum() / item_size
-            a_rmse_l.append(a_rmse.item())
-            b_rmse = (b - random_instance.b).pow(2).sqrt().mean()
-            b_rmse_l.append(b_rmse.item())
-            print('a:{0}'.format(a_rmse))
-            print('b:{0}'.format(b_rmse))
-            pyro.clear_param_store()
-        print(f'a_mean:{np.mean(a_rmse_l)}')
-        print(f'a_std:{np.std(a_rmse_l)}')
-        print(f'b_mean:{np.mean(b_rmse_l)}')
-        print(f'b_std:{np.std(b_rmse_l)}')
+    def test_ai_try_10_item_50_sample_500(self):
+        article_test_util(
+            sample_size=500,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+        )
 
 
 class Irt2PLMissingTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -232,61 +305,24 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
     def setUp(self):
         self.prepare_cuda()
 
-    @staticmethod
-    def generate_randval(x_low, x_up, x_sum, y):
-        # https://blog.csdn.net/maintony/article/details/88540320
-        if len(x_low) == 1:
-            y.append(x_sum)
-        else:
-            a = max(x_sum - sum(x_up[1:len(x_up)]), x_low[0])
-            b = min(x_sum - sum(x_low[1:len(x_low)]), x_up[0])
-            temp = random.uniform(a, b)
-            y.append(temp)
-            x_low = x_low[1:len(x_low)]
-            x_up = x_up[1:len(x_up)]
-            x_sum = x_sum - temp
-            IrtMultiDimTestCase.generate_randval(x_low, x_up, x_sum, y)
-
-    def gen_omega(self, x_feature):
-        x_low = [0 for _ in range(x_feature)]
-        x_up = [np.pi / 2 for _ in range(x_feature)]
-        x_sum = np.pi / 2 * (x_feature - 1)
-        omega = []
-        self.generate_randval(x_low, x_up, x_sum, omega)
-        return omega
-
-    def gen_a(self, item_size, mdisc, x_feature):
-        a = torch.zeros((x_feature, item_size))
-        for j in range(item_size):
-            if j < item_size - x_feature + 1:
-                sigma = self.gen_omega(x_feature)
-                a[:, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
-                a[a < 0.01] = 0.01
-            else:
-                x_size = item_size - j
-                sigma = self.gen_omega(x_size)
-                a[:x_size, j] = mdisc[j] * torch.cos(torch.FloatTensor(sigma))
-                a[a < 0.01] = 0.01
-        for i in range(x_feature):
-            a[i, item_size - i:] = 0
-        return a
-
     def test_ai_100_dim_2pl(self):
         sample_size = 10000
         subsample_size = 100
         item_size = 500
         x_feature = 100
-        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
-        a = self.gen_a(item_size, mdisc, x_feature)
-        random_instance.a = a
-        random_instance.b = -mdiff * mdisc
-        random_instance.b = random_instance.b.view(1, -1)
+        random_instance = RandomMilIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         y = random_instance.y
-        model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature, D=1.702)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature)
+
+        def optim(_, param_name):
+            if param_name == 'a':
+                return {'lr': 1e-2}
+            if param_name == 'b':
+                return {'lr': 1e-2}
+            return {'lr': 1e-3}
+
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': self.optim_2PL,
+                                 'optim_args': optim,
                                  'milestones': [
                                      # int(sample_size / subsample_size) * 50,
                                      int(sample_size / subsample_size) * 190
@@ -296,33 +332,26 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 200), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
-    @staticmethod
-    def optim_2PL(module_name, param_name):
-        if param_name == 'a':
-            return {'lr': 1e-2}
-        if param_name == 'b':
-            return {'lr': 1e-2}
-        return {'lr': 1e-3}
-
     def test_ai_5_dim_3pl(self):
         sample_size = 10000
         subsample_size = 20
         item_size = 50
         x_feature = 10
-        random_instance = RandomIrt3PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
-        logit_c = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
-        c = 1 / (1 + torch.exp(-logit_c))
-        a = self.gen_a(item_size, mdisc, x_feature)
-        random_instance.a = a
-        random_instance.b = -mdiff * mdisc
-        random_instance.b = random_instance.b.view(1, -1)
-        random_instance.c = c
+        random_instance = RandomMilIrt3PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         y = random_instance.y
         model = VaeIRT(data=y, model='irt_3pl', subsample_size=subsample_size, x_feature=x_feature)
+
+        def optim(_, param_name):
+            if param_name == 'a':
+                return {'lr': 1e-2}
+            if param_name == 'b':
+                return {'lr': 1e-2}
+            if param_name == 'c':
+                return {'lr': 1e-2}
+            return {'lr': 1e-3}
+
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': self.optim_3PL,
+                                 'optim_args': optim,
                                  'milestones': [
                                      int(sample_size / subsample_size) * 190,
                                      # int(sample_size / subsample_size) * 400
@@ -332,54 +361,31 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 200), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
-    @staticmethod
-    def optim_3PL(module_name, param_name):
-        if param_name == 'a':
-            return {'lr': 1e-2}
-        if param_name == 'b':
-            return {'lr': 1e-2}
-        if param_name == 'c':
-            return {'lr': 1e-2}
-        return {'lr': 1e-3}
-
     def test_ai_10_dim_4pl(self):
         sample_size = 10000
         subsample_size = 100
         item_size = 20
-        x_feature = 5
-        random_instance = RandomIrt4PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        mdisc = torch.FloatTensor(item_size).log_normal_(0, 0.5)
-        mdiff = torch.FloatTensor(item_size).normal_(0.5, 1)
-        logit_c = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
-        logit_d = torch.FloatTensor(1, item_size).normal_(-1.39, 0.16)
-        c = 1 / (1 + torch.exp(-logit_c))
-        d = 1 / (1 + torch.exp(logit_d))
-        a = self.gen_a(item_size, mdisc, x_feature)
-        random_instance.a = a
-        random_instance.b = -mdiff * mdisc
-        random_instance.b = random_instance.b.view(1, -1)
-        random_instance.c = c
-        random_instance.d = d
+        x_feature = 10
+        random_instance = RandomMilIrt4PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
         y = random_instance.y
         model = VaeIRT(data=y, model='irt_4pl', subsample_size=subsample_size, x_feature=x_feature)
+
+        def optim(_, param_name):
+            if param_name == 'a':
+                return {'lr': 1e-2}
+            if param_name == 'b':
+                return {'lr': 1e-2}
+            return {'lr': 1e-3}
+
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': self.optim_4PL,
+                                 'optim_args': optim,
                                  'milestones': [
                                      int(sample_size / subsample_size) * 400,
-                                     # int(sample_size / subsample_size) * 400
                                  ],
                                  'gamma': 0.1,
                                  })
         model.fit(optim=scheduler, max_iter=int(sample_size / subsample_size * 500), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
-
-    @staticmethod
-    def optim_4PL(module_name, param_name):
-        if param_name == 'a':
-            return {'lr': 1e-2}
-        if param_name == 'b':
-            return {'lr': 1e-2}
-        return {'lr': 1e-3}
 
     def test_cfa(self):
         data = np.loadtxt('ex5.2.dat')
@@ -396,39 +402,67 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(optim=Adam({'lr': 1e-2}), max_iter=10000, loss=Trace_ELBO(num_particles=20))
 
     def test_ai_5_dim(self):
-        sample_size = 10000
-        subsample_size = 100
+        sample_size = 1000
+        subsample_size = 20
         item_size = 50
         x_feature = 2
-        random_instance = RandomIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature)
-        for i in range(x_feature):
-            random_instance.a[i, item_size - i:] = 0
-        # y = random_instance.y.cuda()
-        # random_instance.a = random_instance.a.cuda()
-        # random_instance.b = random_instance.b.cuda()
-        scale_tril = torch.eye(x_feature)
-        scale_tril[0, 1] = scale_tril[1, 0] = 0.7
-        random_instance.x = dist.MultivariateNormal(
-                            torch.zeros((sample_size, x_feature)),
-                            scale_tril=scale_tril
-                        ).sample()
+        x_cov = torch.eye(x_feature)
+        x_cov[0, 1] = x_cov[1, 0] = 0.7
+        random_instance = RandomMilIrt2PL(sample_size=sample_size, item_size=item_size, x_feature=x_feature,
+                                          x_cov=x_cov)
         y = random_instance.y
-        np.savetxt(f'irt_2pl_{sample_size}.txt', y.numpy())
-        np.savetxt(f'irt_2pl_{sample_size}_a.txt', random_instance.a.T.numpy())
-        np.savetxt(f'irt_2pl_{sample_size}_b.txt', random_instance.b.T.numpy())
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature,
                        hidden_dim=64)
 
         def optim(_, param_name):
             if param_name == 'a':
-                return {'lr': 1e-4}
+                return {'lr': 1e-3}
             if param_name == 'b':
                 return {'lr': 1e-3}
-            return {'lr': 1e-4}
+            return {'lr': 1e-3}
 
-        model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 100000), random_instance=random_instance,
+        model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 1000), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
+    def test_try_10_item_50_sample_1000_dim_2(self):
+        # article_test_util(
+        #     sample_size=1000,
+        #     item_size=50,
+        #     try_count=10,
+        #     vi_class=VaeIRT,
+        #     vi_class_kwargs={'subsample_size': 100, 'x_feature': 2},
+        #     vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20},
+        #     random_class=RandomIrt2PL,
+        #     random_class_kwargs={'x_feature': 2},
+        # )
+
+        article_test_load_data_util(
+            file_prefix='irt_2pl_1000',
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100, 'x_feature': 2},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+        )
+
+    def test_try_10_item_50_sample_1000_dim_3(self):
+        article_test_util(
+            sample_size=1000,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={'x_feature': 3},
+        )
+
+        # article_test_load_data_util(
+        #     file_prefix='irt_2pl_1000',
+        #     try_count=10,
+        #     vi_class=VaeIRT,
+        #     vi_class_kwargs={'subsample_size': 100, 'x_feature': 3},
+        #     vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
+        # )
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
@@ -445,41 +479,29 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-4}), max_iter=50000)
 
-    def test_ai_iter_10_item_50_sample_500(self):
-        a_rmse_l = []
-        b_rmse_l = []
-        c_rmse_l = []
-        for i in range(10):
-            item_size = 50
-            sample_size = 500
-            y, random_instance = self.gen_sample(RandomIrt3PL, sample_size, item_size=item_size, file_index=i)
-            model = VaeIRT(data=y, model='irt_3pl', subsample_size=100)
+    def test_ai_try_10_item_50_sample_500(self):
+        article_test_util(
+            sample_size=500,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
+            random_class=RandomIrt3PL,
+            random_class_kwargs=None,
+        )
 
-            def optim(_, pn):
-                if pn in ('a', 'b'):
-                    return {'lr': 1e-3}
-                return {'lr': 1e-3}
-
-            model.fit(random_instance=random_instance, optim=Adam(optim), max_iter=10000)
-            a = pyro.param('a')
-            b = pyro.param('b')
-            c = pyro.param('c')
-            a_rmse = (a - random_instance.a).pow(2).sqrt().sum() / item_size
-            a_rmse_l.append(a_rmse.item())
-            b_rmse = (b - random_instance.b).pow(2).sqrt().mean()
-            b_rmse_l.append(b_rmse.item())
-            c_rmse = (c - random_instance.c).pow(2).sqrt().mean()
-            c_rmse_l.append(c_rmse.item())
-            print('a:{0}'.format(a_rmse))
-            print('b:{0}'.format(b_rmse))
-            print('c:{0}'.format(c_rmse))
-            pyro.clear_param_store()
-        print(f'a_mean:{np.mean(a_rmse_l)}')
-        print(f'a_std:{np.std(a_rmse_l)}')
-        print(f'b_mean:{np.mean(b_rmse_l)}')
-        print(f'b_std:{np.std(b_rmse_l)}')
-        print(f'c_mean:{np.mean(c_rmse_l)}')
-        print(f'c_std:{np.std(c_rmse_l)}')
+    def test_ai_try_10_item_100_sample_1000(self):
+        article_test_util(
+            sample_size=1000,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
+            random_class=RandomIrt3PL,
+            random_class_kwargs=None,
+        )
 
 
 class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
@@ -506,6 +528,27 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
                                  'gamma': 0.1,
                                  })
         model.fit(random_instance=random_instance, optim=scheduler, max_iter=int(sample_size / subsample_size) * 100)
+
+    def test_bbvi_try_10_item_100_sample_1000(self):
+        article_test_load_data_util(
+            file_prefix='irt_4pl_1000',
+            try_count=10,
+            vi_class=VIRT,
+            vi_class_kwargs=None,
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
+        )
+
+    def test_ai_try_10_item_100_sample_1000(self):
+        article_test_util(
+            sample_size=1000,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 10000},
+            random_class=RandomIrt4PL,
+            random_class_kwargs=None,
+        )
 
 
 class CDMRandomMixin(object):
