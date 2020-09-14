@@ -98,7 +98,7 @@ def multiprocess_article_test_load_data_util(
 ):
     pool = Pool(processes=process_size)
     res_lt = []
-    for i in range(start_idx, try_count):
+    for i in range(start_idx, start_idx + try_count):
         kwargs = {
             'file_prefix': file_prefix,
             'vi_class': vi_class,
@@ -182,7 +182,7 @@ def multiprocess_article_test_util(
 ):
     pool = Pool(processes=process_size)
     res_lt = []
-    for i in range(start_idx, try_count):
+    for i in range(start_idx, start_idx + try_count):
         kwargs = {
             'sample_size': sample_size,
             'item_size': item_size,

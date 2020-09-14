@@ -102,7 +102,9 @@ test_4pl <- function(base_path, try_count, method, technical=list(), GenRandomPa
 #res <- test_3pl("irt_3pl_500_", 10, 'EM')
 #res <- test_4pl("irt_4pl_1000_", 10, 'MHRM', technical = list(NCYCLES=2000))
 #res <- test_2pl("irt_2pl_1000_", 10, 'EM')
-res <- test_2pl("irt_2pl_1000_", 10, 'EM', technical = list(NCYCLES=2000),
+res <- test_2pl("irt_2pl_10000_", 10, 'MHRM',
+                technical = list(NCYCLES=2000, info_if_converged=FALSE, logLik_if_converged=FALSE, MHRM_SE_draw=1,
+                                 MHDRAWS=1),
                 GenRandomPars = TRUE)
 print(str_c('mean_a:', mean(res$a)))
 print(str_c('std_a:', sd(res$a)))
