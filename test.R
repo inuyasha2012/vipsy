@@ -1,6 +1,6 @@
 library(stringr)
 library(mirt)
-test_2pl <- function(base_path, try_count, method, technical=list()) {
+test_2pl <- function(base_path, try_count, method, technical=list(), GenRandomPars=TRUE) {
   res_a <- 1:try_count
   res_b <- 1:try_count
   for (i in 1:try_count) {
@@ -9,7 +9,7 @@ test_2pl <- function(base_path, try_count, method, technical=list()) {
     b <- read.table(str_c(base_path, "b_", i - 1, ".txt"), quote = "\"", comment.char = "")
     x_feature <- length(a[1,])
     item_size <- length(dt[1,])
-    mod <- mirt(dt, x_feature, '2PL', method=method, technical = technical )
+    mod <- mirt(dt, x_feature, '2PL', method=method, technical = technical, GenRandomPars=GenRandomPars)
     param <- coef(mod, simplify = TRUE)$items
     a_ <- param[, 1:x_feature]
     b_ <- param[, x_feature + 1]
@@ -34,15 +34,17 @@ test_3pl <- function(base_path, try_count, method, GenRandomPars=FALSE, technica
     a <- read.table(str_c(base_path, "a_", i - 1, ".txt"), quote = "\"", comment.char = "")
     b <- read.table(str_c(base_path, "b_", i - 1, ".txt"), quote = "\"", comment.char = "")
     c <- read.table(str_c(base_path, "c_", i - 1, ".txt"), quote = "\"", comment.char = "")
-    x_feature <- 1
+    x_feature <- length(a[1,])
     item_size <- length(dt[1,])
-    mod <- mirt(dt, x_feature, '3PL', method=method, GenRandomPars=GenRandomPars, technical=technical)
+    mod <- mirt(dt, x_feature, '3PL', method=method, technical=technical,
+                GenRandomPars=GenRandomPars)
     param <- coef(mod, simplify = TRUE)$items
     a_ <- param[, 1:x_feature]
     b_ <- param[, x_feature + 1]
     c_ <- param[, x_feature + 2]
     a_rmse1 <- sum(((-a_ - a)^2)^0.5) / (x_feature * item_size - x_feature * (x_feature - 1) / 2)
     a_rmse2 <- sum(((a_ - a)^2)^0.5) / (x_feature * item_size - x_feature * (x_feature - 1) / 2)
+    a_rmse <- min(a_rmse1, a_rmse2)
     b_rmse <- sum(((b_ - b)^2)^0.5) / item_size
     c_rmse <- sum(((c_ - c)^2)^0.5) / item_size
     print(a_rmse)
@@ -54,7 +56,7 @@ test_3pl <- function(base_path, try_count, method, GenRandomPars=FALSE, technica
   }
   return(list(a=res_a, b=res_b, c=res_c))
 }
-test_4pl <- function(base_path, try_count, method, technical=list()) {
+test_4pl <- function(base_path, try_count, method, technical=list(), GenRandomPars=TRUE) {
   res_a <- 1:try_count
   res_b <- 1:try_count
   res_c <- 1:try_count
@@ -65,9 +67,10 @@ test_4pl <- function(base_path, try_count, method, technical=list()) {
     b <- read.table(str_c(base_path, "b_", i - 1, ".txt"), quote = "\"", comment.char = "")
     c <- read.table(str_c(base_path, "c_", i - 1, ".txt"), quote = "\"", comment.char = "")
     d <- read.table(str_c(base_path, "d_", i - 1, ".txt"), quote = "\"", comment.char = "")
-    x_feature <- 1
+    x_feature <- length(a[1,])
     item_size <- length(dt[1,])
-    mod <- mirt(dt, x_feature, '4PL', method=method, technical = technical)
+   mod <- mirt(dt, x_feature, '4PL', method=method, technical = technical,
+               GenRandomPars=GenRandomPars)
     param <- coef(mod, simplify = TRUE)$items
     a_ <- param[, 1:x_feature]
     b_ <- param[, x_feature + 1]
@@ -75,6 +78,7 @@ test_4pl <- function(base_path, try_count, method, technical=list()) {
     d_ <- param[, x_feature + 3]
     a_rmse1 <- sum(((-a_ - a)^2)^0.5) / (x_feature * item_size - x_feature * (x_feature - 1) / 2)
     a_rmse2 <- sum(((a_ - a)^2)^0.5) / (x_feature * item_size - x_feature * (x_feature - 1) / 2)
+    a_rmse <- min(a_rmse1, a_rmse2)
     b_rmse <- sum(((b_ - b)^2)^0.5) / item_size
     c_rmse <- sum(((c_ - c)^2)^0.5) / item_size
     d_rmse <- sum(((d_ - d)^2)^0.5) / item_size
@@ -98,7 +102,8 @@ test_4pl <- function(base_path, try_count, method, technical=list()) {
 #res <- test_3pl("irt_3pl_500_", 10, 'EM')
 #res <- test_4pl("irt_4pl_1000_", 10, 'MHRM', technical = list(NCYCLES=2000))
 #res <- test_2pl("irt_2pl_1000_", 10, 'EM')
-res <- test_2pl("irt_2pl_1000_", 10, 'EM', technical = list(NCYCLES=2000))
+res <- test_2pl("irt_2pl_1000_", 10, 'EM', technical = list(NCYCLES=2000),
+                GenRandomPars = TRUE)
 print(str_c('mean_a:', mean(res$a)))
 print(str_c('std_a:', sd(res$a)))
 print(str_c('mean_b:', mean(res$b)))

@@ -12,17 +12,17 @@ import torch
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL
 from pyro import distributions as dist
+from multiprocessing import Pool
 
 
 def article_test_load_data_util(
         file_prefix='irt_2pl_500',
-        try_count=10,
+        file_postfix=0,
         vi_class=VaeIRT,
         vi_class_kwargs=None,
         vi_fit_kwargs=None,
 ):
     model_name = '_'.join(file_prefix.split('_')[:2])
-    rmse_dt = {}
     attrs = ['b']
     if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
         attrs.append('a')
@@ -31,115 +31,174 @@ def article_test_load_data_util(
     if model_name == 'irt_4pl':
         attrs.append('d')
     R = namedtuple('R', attrs)
-    for i in range(try_count):
-        y = torch.from_numpy(np.loadtxt(f'{file_prefix}_{i}.txt')).float()
-        item_size = y.size(1)
-        r_kwargs = {}
-        b = torch.from_numpy(np.loadtxt(f'{file_prefix}_b_{i}.txt'))
-        r_kwargs['b'] = b.T
-        if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
-            a = torch.from_numpy(np.loadtxt(f'{file_prefix}_a_{i}.txt'))
-            r_kwargs['a'] = a.T
-        if model_name in ('irt_3pl', 'irt_4pl'):
-            c = torch.from_numpy(np.loadtxt(f'{file_prefix}_c_{i}.txt'))
-            r_kwargs['c'] = c.T
-        if model_name == 'irt_4pl':
-            d = torch.from_numpy(np.loadtxt(f'{file_prefix}_d_{i}.txt'))
-            r_kwargs['d'] = d.T
-        r = R(**r_kwargs)
-        if len(r.a.size()) == 2:
-            x_feature = r.a.size(0)
-        else:
-            x_feature = 1
-        vi_class_kwargs_ = {'data': y, 'model': model_name, 'x_feature': x_feature}
-        if vi_class_kwargs is not None:
-            vi_class_kwargs_.update(vi_class_kwargs)
-        vi_model = vi_class(**vi_class_kwargs_)
-        vi_fit_kwargs_ = {'optim': Adam({'lr': 1e-2}), 'max_iter': 10000}
-        if vi_fit_kwargs is not None:
-            vi_fit_kwargs_.update(vi_fit_kwargs)
-        vi_model.fit(random_instance=r, **vi_fit_kwargs_)
-        rmse_(item_size, model_name, r, rmse_dt, x_feature)
-        pyro.clear_param_store()
-    for key, val in rmse_dt.items():
-        print(f'{key}_mean:{np.mean(val)}')
-        print(f'{key}_std:{np.std(val)}')
+    y = torch.from_numpy(np.loadtxt(f'{file_prefix}_{file_postfix}.txt')).float()
+    item_size = y.size(1)
+    r_kwargs = {}
+    b = torch.from_numpy(np.loadtxt(f'{file_prefix}_b_{file_postfix}.txt'))
+    r_kwargs['b'] = b.T
+    if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
+        a = torch.from_numpy(np.loadtxt(f'{file_prefix}_a_{file_postfix}.txt'))
+        r_kwargs['a'] = a.T
+    if model_name in ('irt_3pl', 'irt_4pl'):
+        c = torch.from_numpy(np.loadtxt(f'{file_prefix}_c_{file_postfix}.txt'))
+        r_kwargs['c'] = c.T
+    if model_name == 'irt_4pl':
+        d = torch.from_numpy(np.loadtxt(f'{file_prefix}_d_{file_postfix}.txt'))
+        r_kwargs['d'] = d.T
+    r = R(**r_kwargs)
+    if len(r.a.size()) == 2:
+        x_feature = r.a.size(0)
+    else:
+        x_feature = 1
+    vi_class_kwargs_ = {'data': y, 'model': model_name, 'x_feature': x_feature}
+    if vi_class_kwargs is not None:
+        vi_class_kwargs_.update(vi_class_kwargs)
+    vi_model = vi_class(**vi_class_kwargs_)
+    vi_fit_kwargs_ = {'optim': Adam({'lr': 1e-2}), 'max_iter': 10000}
+    if vi_fit_kwargs is not None:
+        vi_fit_kwargs_.update(vi_fit_kwargs)
+    vi_model.fit(random_instance=r, **vi_fit_kwargs_)
+    rmse_dt = rmse_(item_size, model_name, r, x_feature)
+    pyro.clear_param_store()
+    return rmse_dt
 
 
-def rmse_(item_size, model_name, r, rmse_dt, x_feature):
+def rmse_(item_size, model_name, r, x_feature):
+    rmse_dt = {}
     if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
         a = pyro.param('a')
         a_rmse = (a - r.a).pow(2).sqrt().sum() / (x_feature * item_size - x_feature * (x_feature - 1) / 2)
-        if 'a' not in rmse_dt:
-            rmse_dt['a'] = [a_rmse.item()]
-        else:
-            rmse_dt['a'].append(a_rmse.item())
+        rmse_dt['a'] = a_rmse.item()
         print('a:{0}'.format(a_rmse))
     b = pyro.param('b')
     b_rmse = (b - r.b).pow(2).sqrt().mean()
-    if 'b' not in rmse_dt:
-        rmse_dt['b'] = [b_rmse.item()]
-    else:
-        rmse_dt['b'].append(b_rmse.item())
+    rmse_dt['b'] = b_rmse.item()
     print('b:{0}'.format(b_rmse))
     if model_name in ('irt_3pl', 'irt_4pl'):
         c = pyro.param('c')
         c_rmse = (c - r.c).pow(2).sqrt().mean()
+        rmse_dt['c'] = c_rmse.item()
         print('c:{0}'.format(c_rmse))
-        if 'c' not in rmse_dt:
-            rmse_dt['c'] = [c_rmse.item()]
-        else:
-            rmse_dt['c'].append(c_rmse.item())
     if model_name == 'irt_4pl':
         d = pyro.param('d')
         d_rmse = (d - r.d).pow(2).sqrt().mean()
         print('d:{0}'.format(d_rmse))
-        if 'd' not in rmse_dt:
-            rmse_dt['d'] = [d_rmse.item()]
-        else:
-            rmse_dt['d'].append(d_rmse.item())
+        rmse_dt['d'] = d_rmse.item()
+    return rmse_dt
+
+
+def multiprocess_article_test_load_data_util(
+        file_prefix='irt_2pl_500',
+        try_count=10,
+        vi_class=VaeIRT,
+        vi_class_kwargs=None,
+        vi_fit_kwargs=None,
+        process_size=2,
+        start_idx=0
+):
+    pool = Pool(processes=process_size)
+    res_lt = []
+    for i in range(start_idx, try_count):
+        kwargs = {
+            'file_prefix': file_prefix,
+            'vi_class': vi_class,
+            'vi_class_kwargs': vi_class_kwargs,
+            'vi_fit_kwargs': vi_fit_kwargs,
+            'file_postfix': i,
+        }
+        res = pool.apply_async(func=article_test_load_data_util, kwds=kwargs)
+        res_lt.append(res)
+
+    pool.close()
+    pool.join()
+
+    print_rmse(res_lt)
+
+
+def print_rmse(res_lt):
+    rmse_dt = {}
+    for res in res_lt:
+        rmse_dt_ = res.get()
+        for key, val in rmse_dt_.items():
+            if key in rmse_dt:
+                rmse_dt[key].append(val)
+            else:
+                rmse_dt[key] = [val]
+    for k, v in rmse_dt.items():
+        print(f'{k}_mean:{np.mean(v)}')
+        print(f'{k}_std:{np.std(v)}')
 
 
 def article_test_util(
         sample_size=500,
         item_size=50,
-        try_count=10,
         vi_class=VaeIRT,
         vi_class_kwargs=None,
         vi_fit_kwargs=None,
         random_class=RandomIrt2PL,
         random_class_kwargs=None,
+        file_postfix=0,
 ):
     model_name = random_class.name
-    rmse_dt = {}
-    for i in range(try_count):
-        random_class_kwargs_ = {'sample_size': sample_size, 'item_size': item_size}
-        if random_class_kwargs is not None:
-            random_class_kwargs_.update(random_class_kwargs)
-        r = random_class(**random_class_kwargs_)
-        y = r.y
-        x_feature = r.x.size(1)
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_{i}.txt', y.numpy())
-        np.savetxt(f'{random_class.name or "data"}_{sample_size}_b_{i}.txt', r.b.numpy())
-        if hasattr(r, 'a'):
-            np.savetxt(f'{random_class.name or "data"}_{sample_size}_a_{i}.txt', r.a.T.numpy())
-        if hasattr(r, 'c'):
-            np.savetxt(f'{random_class.name or "data"}_{sample_size}_c_{i}.txt', r.c.T.numpy())
-        if hasattr(r, 'd'):
-            np.savetxt(f'{random_class.name or "data"}_{sample_size}_d_{i}.txt', r.d.T.numpy())
-        vi_class_kwargs_ = {'data':y, 'model': model_name, 'subsample_size': 100, 'x_feature': x_feature }
-        if vi_class_kwargs is not None:
-            vi_class_kwargs_.update(vi_class_kwargs)
-        vi_model = vi_class(**vi_class_kwargs_)
-        vi_fit_kwargs_ = {'optim': Adam({'lr': 1e-2}), 'max_iter': 10000}
-        if vi_fit_kwargs is not None:
-            vi_fit_kwargs_.update(vi_fit_kwargs)
-        vi_model.fit(random_instance=r, **vi_fit_kwargs_)
-        rmse_(item_size, model_name, r, rmse_dt, x_feature)
-        pyro.clear_param_store()
-    for key, val in rmse_dt.items():
-        print(f'{key}_mean:{np.mean(val)}')
-        print(f'{key}_std:{np.std(val)}')
+    random_class_kwargs_ = {'sample_size': sample_size, 'item_size': item_size}
+    if random_class_kwargs is not None:
+        random_class_kwargs_.update(random_class_kwargs)
+    torch.manual_seed(int(random.random() * 1000))
+    r = random_class(**random_class_kwargs_)
+    y = r.y
+    x_feature = r.x.size(1)
+    np.savetxt(f'{random_class.name or "data"}_{sample_size}_{file_postfix}.txt', y.numpy())
+    np.savetxt(f'{random_class.name or "data"}_{sample_size}_b_{file_postfix}.txt', r.b.numpy())
+    if hasattr(r, 'a'):
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_a_{file_postfix}.txt', r.a.T.numpy())
+    if hasattr(r, 'c'):
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_c_{file_postfix}.txt', r.c.T.numpy())
+    if hasattr(r, 'd'):
+        np.savetxt(f'{random_class.name or "data"}_{sample_size}_d_{file_postfix}.txt', r.d.T.numpy())
+    vi_class_kwargs_ = {'data': y, 'model': model_name, 'subsample_size': 100, 'x_feature': x_feature}
+    if vi_class_kwargs is not None:
+        vi_class_kwargs_.update(vi_class_kwargs)
+    vi_model = vi_class(**vi_class_kwargs_)
+    vi_fit_kwargs_ = {'optim': Adam({'lr': 1e-2}), 'max_iter': 10000}
+    if vi_fit_kwargs is not None:
+        vi_fit_kwargs_.update(vi_fit_kwargs)
+    vi_model.fit(random_instance=r, **vi_fit_kwargs_)
+    rmse_dt = rmse_(item_size, model_name, r, x_feature)
+    pyro.clear_param_store()
+    return rmse_dt
+
+
+def multiprocess_article_test_util(
+        sample_size=500,
+        item_size=50,
+        vi_class=VaeIRT,
+        vi_class_kwargs=None,
+        vi_fit_kwargs=None,
+        random_class=RandomIrt2PL,
+        random_class_kwargs=None,
+        start_idx=0,
+        try_count=10,
+        process_size=2,
+):
+    pool = Pool(processes=process_size)
+    res_lt = []
+    for i in range(start_idx, try_count):
+        kwargs = {
+            'sample_size': sample_size,
+            'item_size': item_size,
+            'vi_class': vi_class,
+            'vi_class_kwargs': vi_class_kwargs,
+            'vi_fit_kwargs': vi_fit_kwargs,
+            'random_class': random_class,
+            'random_class_kwargs': random_class_kwargs,
+            'file_postfix': i,
+        }
+        res = pool.apply_async(func=article_test_util, kwds=kwargs)
+        res_lt.append(res)
+
+    pool.close()
+    pool.join()
+    print_rmse(res_lt)
 
 
 class TestMixin(object):
@@ -195,37 +254,38 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_bbvi_try_10_item_50_sample_100(self):
-        article_test_load_data_util(
+        multiprocess_article_test_load_data_util(
             file_prefix='irt_2pl_100',
             try_count=10,
             vi_class=VIRT,
             vi_class_kwargs=None,
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
+            process_size=2,
+            start_idx=0
         )
 
     def test_bbvi_try_10_item_100_sample_200(self):
-        article_test_load_data_util(
+        multiprocess_article_test_load_data_util(
             file_prefix='irt_2pl_200',
-            try_count=10,
             vi_class=VIRT,
             vi_class_kwargs=None,
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            start_idx=0,
+            process_size=2
         )
 
     def test_bbvi_try_10_item_50_sample_500(self):
-        article_test_util(
-            item_size=50,
-            try_count=10,
-            sample_size=500,
-            vi_class=VaeIRT,
+        multiprocess_article_test_load_data_util(
+            file_prefix='irt_2pl_500',
+            vi_class=VIRT,
             vi_class_kwargs=None,
-            vi_fit_kwargs=None,
-            random_class=RandomIrt2PL,
-            random_class_kwargs=None,
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            start_idx=0,
+            process_size=2
         )
 
     def test_ai_try_10_item_50_sample_100(self):
-        article_test_util(
+        multiprocess_article_test_util(
             sample_size=100,
             item_size=50,
             try_count=10,
@@ -234,10 +294,12 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
             random_class=RandomIrt2PL,
             random_class_kwargs=None,
+            start_idx=0,
+            process_size=2
         )
 
     def test_ai_try_10_item_100_sample_200(self):
-        article_test_util(
+        multiprocess_article_test_util(
             sample_size=200,
             item_size=100,
             try_count=10,
@@ -246,10 +308,12 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
             random_class=RandomIrt2PL,
             random_class_kwargs=None,
+            start_idx=0,
+            process_size=2
         )
 
     def test_ai_try_10_item_50_sample_500(self):
-        article_test_util(
+        multiprocess_article_test_util(
             sample_size=500,
             item_size=50,
             try_count=10,
@@ -258,6 +322,8 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
             random_class=RandomIrt2PL,
             random_class_kwargs=None,
+            start_idx=0,
+            process_size=2
         )
 
 
@@ -424,45 +490,91 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 1000), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
 
-    def test_try_10_item_50_sample_1000_dim_2(self):
-        # article_test_util(
-        #     sample_size=1000,
-        #     item_size=50,
-        #     try_count=10,
-        #     vi_class=VaeIRT,
-        #     vi_class_kwargs={'subsample_size': 100, 'x_feature': 2},
-        #     vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20},
-        #     random_class=RandomIrt2PL,
-        #     random_class_kwargs={'x_feature': 2},
-        # )
-
-        article_test_load_data_util(
-            file_prefix='irt_2pl_1000',
-            try_count=10,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100, 'x_feature': 2},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-        )
-
-    def test_try_10_item_50_sample_1000_dim_3(self):
-        article_test_util(
+    def test_ai_try_10_item_50_sample_1000_dim_2(self):
+        multiprocess_article_test_util(
             sample_size=1000,
             item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={'x_feature': 2},
+            start_idx=0,
             try_count=10,
+            process_size=2,
+        )
+
+    def test_ai_try_10_item_50_sample_1000_dim_3(self):
+        multiprocess_article_test_util(
+            sample_size=1000,
+            item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 3},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
         )
 
-        # article_test_load_data_util(
-        #     file_prefix='irt_2pl_1000',
-        #     try_count=10,
-        #     vi_class=VaeIRT,
-        #     vi_class_kwargs={'subsample_size': 100, 'x_feature': 3},
-        #     vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
-        # )
+    def test_ai_try_10_item_50_sample_5000_dim_3(self):
+        multiprocess_article_test_util(
+            sample_size=5000,
+            item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={'x_feature': 3},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+        )
+
+    def test_ai_try_10_item_50_sample_10000_dim_3(self):
+        multiprocess_article_test_util(
+            sample_size=10000,
+            item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={'x_feature': 3},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+        )
+
+    def test_ai_try_10_item_50_sample_5000_dim_5(self):
+        multiprocess_article_test_util(
+            sample_size=5000,
+            item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={'x_feature': 5},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+        )
+
+    def test_ai_try_10_item_50_sample_10000_dim_5(self):
+
+        multiprocess_article_test_util(
+            sample_size=10000,
+            item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 200000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={'x_feature': 5},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+        )
+
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
@@ -480,7 +592,7 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-4}), max_iter=50000)
 
     def test_ai_try_10_item_50_sample_500(self):
-        article_test_util(
+        multiprocess_article_test_util(
             sample_size=500,
             item_size=50,
             try_count=10,
@@ -489,10 +601,12 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
             random_class=RandomIrt3PL,
             random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
         )
 
     def test_ai_try_10_item_100_sample_1000(self):
-        article_test_util(
+        multiprocess_article_test_util(
             sample_size=1000,
             item_size=100,
             try_count=10,
@@ -501,6 +615,8 @@ class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
             random_class=RandomIrt3PL,
             random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
         )
 
 
@@ -530,16 +646,18 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=scheduler, max_iter=int(sample_size / subsample_size) * 100)
 
     def test_bbvi_try_10_item_100_sample_1000(self):
-        article_test_load_data_util(
+        multiprocess_article_test_load_data_util(
             file_prefix='irt_4pl_1000',
-            try_count=10,
+            process_size=2,
             vi_class=VIRT,
             vi_class_kwargs=None,
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
+            start_idx=0,
+            try_count=10,
         )
 
     def test_ai_try_10_item_100_sample_1000(self):
-        article_test_util(
+        multiprocess_article_test_util(
             sample_size=1000,
             item_size=100,
             try_count=10,
@@ -548,6 +666,8 @@ class Irt4PLTestCase(TestCase, TestMixin, IRTRandomMixin):
             vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 10000},
             random_class=RandomIrt4PL,
             random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
         )
 
 
