@@ -315,8 +315,8 @@ class RandomMilIrt2PL(RandomPsyData):
             mdiff_local=0.5,
             mdiff_scale=1,
             x_feature=2,
-            x_local=torch.zeros((2,)),
-            x_cov=torch.eye(2),
+            x_local=None,
+            x_cov=None,
             D=1,
             *args,
             **kwargs
@@ -328,6 +328,10 @@ class RandomMilIrt2PL(RandomPsyData):
         b = -mdiff * mdisc
         self.b = b.view(1, -1)
         self.x_feature = x_feature
+        if x_local is None:
+            x_local = torch.zeros((x_feature,))
+        if x_cov is None:
+            x_cov = torch.eye(x_feature)
         self.x = dist.MultivariateNormal(x_local, x_cov).sample((self.sample_size,))
         self.D = D
 
