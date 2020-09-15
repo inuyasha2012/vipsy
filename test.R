@@ -27,6 +27,23 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
     }
     x_feature <- length(a[1,])
     item_size <- length(dt[1,])
+    mod_value = mirt(
+  irt_2pl_1000,
+  x_feature,
+  '2PL',
+  pars = 'values'
+  )
+ for (i in 1:length(mod_value$name)) {
+  if (str_detect(mod_value$name[i], 'a')) {
+    mod_value$value[i] = 1
+  }
+  if (mod_value$name[i] == 'd') {
+    mod_value$value[i] = 0
+  }
+  if (mod_value$name[i] == 'g') {
+    mod_value$value[i] = 0.1
+  }
+}
     tryCatch({
                mod <- mirt(dt, x_feature, str_c(param_num, 'PL'), method = method, technical = technical,
                            GenRandomPars = GenRandomPars)
