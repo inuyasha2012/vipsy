@@ -871,19 +871,13 @@ class ArticleTest(TestCase):
             process_size=2,
         )
 
-    @staticmethod
-    def test_2pl_ai_try_10_item_50_sample_1000_dim_2_optim(_, pn):
-        if pn in ('a', 'b'):
-            return {'lr': 1e-3}
-        return {'lr': 1e-3}
-
     def test_2pl_ai_try_10_item_50_sample_1000_dim_2(self):
         multiprocess_article_test_util(
             sample_size=1000,
             item_size=50,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': None},
-            vi_fit_kwargs={'optim': Adam(self.test_2pl_ai_try_10_item_50_sample_1000_dim_2_optim), 'max_iter': 7000},
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 7000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 2},
             start_idx=0,
@@ -897,7 +891,7 @@ class ArticleTest(TestCase):
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 7000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 3},
             start_idx=0,
