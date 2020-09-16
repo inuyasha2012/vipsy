@@ -1,3 +1,4 @@
+import os
 from collections import namedtuple
 from math import nan
 import random
@@ -141,6 +142,7 @@ def article_test_util(
         random_class=RandomIrt2PL,
         random_class_kwargs=None,
         file_postfix=0,
+        folder=None,
 ):
     model_name = random_class.name
     random_class_kwargs_ = {'sample_size': sample_size, 'item_size': item_size}
@@ -150,26 +152,32 @@ def article_test_util(
     r = random_class(**random_class_kwargs_)
     y = r.y
     x_feature = r.x.size(1)
+    if folder is not None:
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        folder = f'{folder}/'
+    else:
+        folder = ''
     np.savetxt(
-        f'{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_{file_postfix}.txt',
+        f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_{file_postfix}.txt',
         y.numpy()
     )
     np.savetxt(
-        f'{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_b_{file_postfix}.txt',
+        f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_b_{file_postfix}.txt',
         r.b.numpy()
     )
     if hasattr(r, 'a'):
         np.savetxt(
-            f'{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_a_{file_postfix}.txt',
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_a_{file_postfix}.txt',
             r.a.T.numpy()
         )
     if hasattr(r, 'c'):
         np.savetxt(
-            f'{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_c_{file_postfix}.txt',
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_c_{file_postfix}.txt',
             r.c.T.numpy())
     if hasattr(r, 'd'):
         np.savetxt(
-            f'{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_d_{file_postfix}.txt',
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_d_{file_postfix}.txt',
             r.d.T.numpy()
         )
     vi_class_kwargs_ = {'data': y, 'model': model_name, 'subsample_size': 100, 'x_feature': x_feature}
@@ -196,6 +204,7 @@ def multiprocess_article_test_util(
         start_idx=0,
         try_count=10,
         process_size=2,
+        folder=None,
 ):
     pool = Pool(processes=process_size)
     res_lt = []
@@ -209,6 +218,7 @@ def multiprocess_article_test_util(
             'random_class': random_class,
             'random_class_kwargs': random_class_kwargs,
             'file_postfix': i,
+            'folder': folder,
         }
         res = pool.apply_async(func=article_test_util, kwds=kwargs)
         res_lt.append(res)
@@ -657,48 +667,6 @@ class ArticleTest(TestCase):
             try_count=10,
         )
 
-    def test_4pl_ai_try_10_item_100_sample_1000(self):
-        multiprocess_article_test_util(
-            sample_size=1000,
-            item_size=100,
-            try_count=10,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 10000},
-            random_class=RandomIrt4PL,
-            random_class_kwargs=None,
-            start_idx=0,
-            process_size=2,
-        )
-
-    def test_3pl_ai_try_10_item_50_sample_500(self):
-        multiprocess_article_test_util(
-            sample_size=500,
-            item_size=50,
-            try_count=10,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
-            random_class=RandomIrt3PL,
-            random_class_kwargs=None,
-            start_idx=0,
-            process_size=2,
-        )
-
-    def test_3pl_ai_try_10_item_100_sample_1000(self):
-        multiprocess_article_test_util(
-            sample_size=1000,
-            item_size=100,
-            try_count=10,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
-            random_class=RandomIrt3PL,
-            random_class_kwargs=None,
-            start_idx=0,
-            process_size=2,
-        )
-
     def test_2pl_bbvi_try_10_item_50_sample_100(self):
         multiprocess_article_test_load_data_util(
             file_prefix='irt_2pl_100',
@@ -730,38 +698,85 @@ class ArticleTest(TestCase):
             process_size=2
         )
 
-    def test_2pl_ai_try_10_item_50_sample_100(self):
+    # 均摊变分推断
+    def test_2pl_ai_try_10_item_50_sample_100_dim_1(self):
         multiprocess_article_test_util(
             sample_size=100,
             item_size=50,
             try_count=10,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 20},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
             random_class=RandomIrt2PL,
             random_class_kwargs=None,
             start_idx=0,
-            process_size=2
+            process_size=2,
+            folder='dt'
         )
 
-    def test_2pl_ai_try_10_item_100_sample_200(self):
+    def test_2pl_ai_try_10_item_50_sample_200__dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=200,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 20},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+            folder='dt'
+        )
+
+    def test_2pl_ai_try_10_item_100_sample_100_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=100,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 20},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+            folder='dt'
+        )
+
+    def test_2pl_ai_try_10_item_100_sample_200_dim_1(self):
         multiprocess_article_test_util(
             sample_size=200,
             item_size=100,
             try_count=10,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 20},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+            folder='dt'
+        )
+
+    def test_2pl_ai_try_10_item_50_sample_500_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=500,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
             random_class=RandomIrt2PL,
             random_class_kwargs=None,
             start_idx=0,
             process_size=2
         )
 
-    def test_2pl_ai_try_10_item_50_sample_500(self):
+    def test_2pl_ai_try_10_item_100_sample_500_dim_1(self):
         multiprocess_article_test_util(
             sample_size=500,
-            item_size=50,
+            item_size=100,
             try_count=10,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
@@ -772,13 +787,103 @@ class ArticleTest(TestCase):
             process_size=2
         )
 
+    def test_3pl_ai_try_10_item_50_sample_500_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=500,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt3PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+        )
+
+    def test_3pl_ai_try_10_item_100_sample_500_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=500,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt3PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+        )
+
+    def test_3pl_ai_try_10_item_50_sample_1000_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=1000,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt3PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+        )
+
+    def test_3pl_ai_try_10_item_100_sample_1000_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=1000,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt3PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+        )
+
+    def test_4pl_ai_try_10_item_50_sample_1000_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=1000,
+            item_size=50,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt4PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+        )
+
+    def test_4pl_ai_try_10_item_100_sample_1000_dim_1(self):
+        multiprocess_article_test_util(
+            sample_size=1000,
+            item_size=100,
+            try_count=10,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            random_class=RandomIrt4PL,
+            random_class_kwargs=None,
+            start_idx=0,
+            process_size=2,
+        )
+
+    @staticmethod
+    def test_2pl_ai_try_10_item_50_sample_1000_dim_2_optim(_, pn):
+        if pn in ('a', 'b'):
+            return {'lr': 1e-3}
+        return {'lr': 1e-3}
+
     def test_2pl_ai_try_10_item_50_sample_1000_dim_2(self):
         multiprocess_article_test_util(
             sample_size=1000,
             item_size=50,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            vi_class_kwargs={'subsample_size': None},
+            vi_fit_kwargs={'optim': Adam(self.test_2pl_ai_try_10_item_50_sample_1000_dim_2_optim), 'max_iter': 7000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 2},
             start_idx=0,
@@ -826,6 +931,7 @@ class ArticleTest(TestCase):
             start_idx=0,
             try_count=10,
             process_size=2,
+            folder='dt'
         )
 
     def test_2pl_ai_try_10_item_50_sample_5000_dim_5(self):
@@ -840,6 +946,7 @@ class ArticleTest(TestCase):
             start_idx=0,
             try_count=10,
             process_size=2,
+            folder='dt',
         )
 
     def test_2pl_ai_try_10_item_50_sample_10000_dim_5(self):
@@ -854,6 +961,7 @@ class ArticleTest(TestCase):
             start_idx=0,
             try_count=10,
             process_size=2,
+            folder='dt',
         )
 
     def test_3pl_ai_try_10_item_50_sample_10000_dim_5(self):
@@ -869,6 +977,7 @@ class ArticleTest(TestCase):
             start_idx=0,
             try_count=10,
             process_size=2,
+            folder='dt'
         )
 
     def test_3pl_mil_ai_try_10_item_50_sample_5000_dim_5(self):
@@ -884,6 +993,7 @@ class ArticleTest(TestCase):
             start_idx=0,
             try_count=10,
             process_size=2,
+            folder='mil'
         )
 
     def test_4pl_mil_ai_try_10_item_50_sample_5000_dim_5(self):
@@ -899,4 +1009,5 @@ class ArticleTest(TestCase):
             start_idx=0,
             try_count=10,
             process_size=2,
+            folder='mil'
         )
