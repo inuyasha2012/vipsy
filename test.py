@@ -878,8 +878,23 @@ class ArticleTest(TestCase):
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
             random_class=RandomMilIrt3PL,
+            random_class_kwargs={'x_feature': 5},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+        )
+
+    def test_4pl_mil_ai_try_10_item_50_sample_5000_dim_5(self):
+
+        multiprocess_article_test_util(
+            sample_size=5000,
+            item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
+            random_class=RandomMilIrt4PL,
             random_class_kwargs={'x_feature': 5},
             start_idx=0,
             try_count=10,

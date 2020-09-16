@@ -1,17 +1,19 @@
 library(stringr)
 library(mirt)
-test_irt <- function(base_path, try_count, method, technical = list(), GenRandomPars = TRUE) {
+test_irt <- function(base_path, try_count, method, technical = list(), GenRandomPars = FALSE, custom_pars = FALSE) {
   model_name <- str_split(base_path, '_', simplify = TRUE)[2]
   param_num <- as.numeric(str_split(model_name, "p", simplify = TRUE)[1])
+  success_ct <- 0
+  time_lt <- NULL
   if (param_num > 1) {
-    res_a <- 1:try_count
+    res_a <- NULL
   }
-  res_b <- 1:try_count
+  res_b <- NULL
   if (param_num > 2) {
-    res_c <- 1:try_count
+    res_c <- NULL
   }
   if (param_num > 3) {
-    res_d <- 1:try_count
+    res_d <- NULL
   }
   for (i in 1:try_count) {
     dt <- read.table(str_c(base_path, "_", i - 1, ".txt"), quote = "\"", comment.char = "")
@@ -27,26 +29,41 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
     }
     x_feature <- length(a[1,])
     item_size <- length(dt[1,])
-    mod_value = mirt(
-  irt_2pl_1000,
-  x_feature,
-  '2PL',
-  pars = 'values'
-  )
- for (i in 1:length(mod_value$name)) {
-  if (str_detect(mod_value$name[i], 'a')) {
-    mod_value$value[i] = 1
-  }
-  if (mod_value$name[i] == 'd') {
-    mod_value$value[i] = 0
-  }
-  if (mod_value$name[i] == 'g') {
-    mod_value$value[i] = 0.1
-  }
-}
+    if (custom_pars) {
+      pars <- mirt(
+        dt,
+        x_feature,
+        '2PL',
+        pars = 'values'
+      )
+      for (j in 1:length(pars$name)) {
+        if (str_detect(pars$name[i], 'a')) {
+          pars$value[j] <- 1
+        }
+        if (pars$name[j] == 'd') {
+          pars$value[j] <- 0
+        }
+        if (pars$name[j] == 'g') {
+          pars$value[j] <- 0.1
+        }
+        if (pars$name[j] == 'u') {
+          pars$value[j] <- 0.9
+        }
+      }
+    }
     tryCatch({
-               mod <- mirt(dt, x_feature, str_c(param_num, 'PL'), method = method, technical = technical,
-                           GenRandomPars = GenRandomPars)
+               t1 <- proc.time()
+               if (custom_pars) {
+                 mod <- mirt(dt, x_feature, str_c(param_num, 'PL'), method = method, technical = technical,
+                             GenRandomPars = GenRandomPars, pars = pars)
+               } else {
+                 mod <- mirt(dt, x_feature, str_c(param_num, 'PL'), method = method, technical = technical,
+                             GenRandomPars = GenRandomPars)
+               }
+               t2 <- proc.time()
+               t <- t2 - t1
+               time_lt <- append(time_lt, t[3][[1]])
+               success_ct <- success_ct + 1
                param <- coef(mod, simplify = TRUE)$items
                a_ <- param[, 1:x_feature]
                b_ <- param[, x_feature + 1]
@@ -75,14 +92,14 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
                  print(d_rmse)
                }
                if (param_num > 1) {
-                 res_a[i] <- a_rmse
+                 res_a <- append(res_a, a_rmse)
                }
-               res_b[i] <- b_rmse
+               res_b <- append(res_b, b_rmse)
                if (param_num > 2) {
-                 res_c[i] <- c_rmse
+                 res_c <- append(res_c, c_rmse)
                }
                if (param_num > 3) {
-                 res_d[i] <- d_rmse
+                 res_d <- append(res_d, d_rmse)
                }
              }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") }
     )
@@ -97,6 +114,8 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
   if (param_num > 3) {
     rmse$d <- res_d
   }
+  rmse$success_ct <- success_ct
+  rmse$time_lt <- time_lt
   return(rmse)
 }
 #res <- test_2pl("irt_2pl_100_", 10, 'EM')
@@ -112,9 +131,11 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
 ##                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 ##                GenRandomPars = TRUE)
 
-res <- test_irt("irt_3pl_10000_item_50_dim_5", 10, 'MHRM',
-                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-                GenRandomPars = FALSE)
+res <- test_irt("irt_3pl_sample_5000_item_50_dim_5", 10, 'MHRM',
+                technical = list(NCYCLES = 2, info_if_converged = FALSE, logLik_if_converged = FALSE),
+                GenRandomPars = FALSE, custom_pars = FALSE)
+print(str_c('success count:', res$success_ct))
+print(str_c('time_mean:', mean(remse$time_lt)))
 print(str_c('mean_a:', mean(res$a)))
 print(str_c('std_a:', sd(res$a)))
 print(str_c('mean_b:', mean(res$b)))
