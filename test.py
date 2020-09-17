@@ -27,6 +27,7 @@ def article_test_load_data_util(
         folder=None
 ):
     file_prefix = f'irt_{model_name}_sample_{sample_size}_item_{item_size}_dim_{x_feature_size}'
+    model_name = f'irt_{model_name}'
     attrs = ['b']
     if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
         attrs.append('a')
@@ -115,7 +116,7 @@ def multiprocess_article_test_load_data_util(
             'vi_class_kwargs': vi_class_kwargs,
             'vi_fit_kwargs': vi_fit_kwargs,
             'file_postfix': i,
-            'folder': None
+            'folder': folder
         }
         res = pool.apply_async(func=article_test_load_data_util, kwds=kwargs)
         res_lt.append(res)
@@ -663,47 +664,51 @@ class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
 class ArticleTest(TestCase):
 
-    def test_4pl_bbvi_try_10_item_100_sample_1000(self):
+    def test_4pl_bbvi_try_10_item_50_sample_1000(self):
         multiprocess_article_test_load_data_util(
-            file_prefix='irt_4pl_1000',
-            process_size=2,
+            model_name='4pl',
+            sample_size=1000,
+            item_size=50,
+            x_feature_size=1,
             vi_class=VIRT,
+            process_size=2,
             vi_class_kwargs=None,
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
             start_idx=0,
             try_count=10,
+            folder='dt'
         )
 
-    def test_2pl_bbvi_try_10_item_50_sample_100(self):
-        multiprocess_article_test_load_data_util(
-            file_prefix='irt_2pl_100',
-            try_count=10,
-            vi_class=VIRT,
-            vi_class_kwargs=None,
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
-            process_size=2,
-            start_idx=0
-        )
-
-    def test_2pl_bbvi_try_10_item_100_sample_200(self):
-        multiprocess_article_test_load_data_util(
-            file_prefix='irt_2pl_200',
-            vi_class=VIRT,
-            vi_class_kwargs=None,
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-            start_idx=0,
-            process_size=2
-        )
-
-    def test_2pl_bbvi_try_10_item_50_sample_500(self):
-        multiprocess_article_test_load_data_util(
-            file_prefix='irt_2pl_500',
-            vi_class=VIRT,
-            vi_class_kwargs=None,
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-            start_idx=0,
-            process_size=2
-        )
+    # def test_2pl_bbvi_try_10_item_50_sample_100(self):
+    #     multiprocess_article_test_load_data_util(
+    #         file_prefix='irt_2pl_100',
+    #         try_count=10,
+    #         vi_class=VIRT,
+    #         vi_class_kwargs=None,
+    #         vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
+    #         process_size=2,
+    #         start_idx=0
+    #     )
+    #
+    # def test_2pl_bbvi_try_10_item_100_sample_200(self):
+    #     multiprocess_article_test_load_data_util(
+    #         file_prefix='irt_2pl_200',
+    #         vi_class=VIRT,
+    #         vi_class_kwargs=None,
+    #         vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+    #         start_idx=0,
+    #         process_size=2
+    #     )
+    #
+    # def test_2pl_bbvi_try_10_item_50_sample_500(self):
+    #     multiprocess_article_test_load_data_util(
+    #         file_prefix='irt_2pl_500',
+    #         vi_class=VIRT,
+    #         vi_class_kwargs=None,
+    #         vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+    #         start_idx=0,
+    #         process_size=2
+    #     )
 
     # 均摊变分推断
     def test_2pl_ai_try_10_item_50_sample_100_dim_1(self):
