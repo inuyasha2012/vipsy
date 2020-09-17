@@ -417,6 +417,11 @@ class RandomMilIrt4PL(RandomMilIrt3PL):
 class NormEncoder(nn.Module):
 
     def __init__(self, item_size, x_dim, hidden_dim):
+        """
+        :param item_size: 题量
+        :param x_dim: 潜变量特质维度数
+        :param hidden_dim: 隐藏层维度数
+        """
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, x_dim)
@@ -485,6 +490,7 @@ class SoftmaxEncoder(nn.Module):
 
 
 class FreeMessenger(Messenger):
+    # 参数约束工具
     def __init__(self, free):
         super().__init__()
         self.free = free
@@ -495,7 +501,7 @@ class FreeMessenger(Messenger):
 
 
 class SVI(SVI_):
-
+    # 加入了参数约束的svi
     def step(self, *args, **kwargs):
         with poutine.trace(param_only=True) as param_capture:
             loss = self.loss_and_grads(self.model, self.guide, *args, **kwargs)
@@ -544,6 +550,14 @@ class BaseIRT(BasePsy):
                  *args,
                  **kwargs
                  ):
+        """
+        :param model: irt模型，内容参考IRT_FUN键值
+        :param x_feature: 潜变量特征维度数
+        :param share_cov: 是否共享方差协方差矩阵
+        :param D: irt模型的D值，一般是1.702或1
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature
@@ -611,6 +625,12 @@ class BaseIRT(BasePsy):
         return p, data_
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
+        """
+        :param optim: 优化算法
+        :param loss: 损失函数
+        :param max_iter: 最大迭代次数
+        :param random_instance: 随机数据生成实例
+        """
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
         with trange(max_iter) as t:
             for i in t:
@@ -639,6 +659,11 @@ class BaseIRT(BasePsy):
 class VaeIRT(BaseIRT):
     # 基于变分自编码器的IRT参数估计
     def __init__(self, hidden_dim=64, *args, **kwargs):
+        """
+        :param hidden_dim: 隐藏层维度数
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         if self.x_feature == 1:
             self.encoder = NormEncoder(self.item_size, self.x_feature, hidden_dim)
@@ -706,6 +731,12 @@ class BaseCDM(BasePsy):
     }
 
     def __init__(self, q, model='dina', *args, **kwargs):
+        """
+        :param q: q矩阵
+        :param model: 认知诊断模型，参考CDM_FUN
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self.q = q
         self.attr_size = q.size(0)
@@ -725,6 +756,12 @@ class BaseCDM(BasePsy):
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
 
     def fit(self, optim=Adam({'lr': 1e-3}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
+        """
+        :param optim: 优化算法
+        :param loss: 损失函数
+        :param max_iter: 最大迭代次数
+        :param random_instance: 随机数据生成实例
+        """
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
         with trange(max_iter) as t:
             for i in t:
@@ -748,6 +785,11 @@ class BaseCDM(BasePsy):
 class VaeCDM(BaseCDM):
     # 基于变分自编码器的CDM参数估计
     def __init__(self, hidden_dim=64, *args, **kwargs):
+        """
+        :param hidden_dim: 隐藏层实例
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
         self.encoder = BinEncoder(self.item_size, self.attr_size, hidden_dim)
 
