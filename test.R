@@ -116,30 +116,48 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
   }
   rmse$success_ct <- success_ct
   rmse$time_lt <- time_lt
+  print(str_c('success count:', rmse$success_ct))
+  print(str_c('time_mean:', mean(rmse$time_lt)))
+  print(str_c('mean_a:', mean(rmse$a)))
+  print(str_c('std_a:', sd(rmse$a)))
+  print(str_c('mean_b:', mean(rmse$b)))
+  print(str_c('std_b:', sd(rmse$b)))
+  print(str_c('mean_c:', mean(rmse$c)))
+  print(str_c('std_c:', sd(rmse$c)))
+  print(str_c('mean_d:', mean(rmse$d)))
+  print(str_c('std_d:', sd(rmse$d)))
   return(rmse)
 }
-## 100样本，50题，1维，2参数，EM算法
+#print('100样本，50题，1维，2参数，EM算法')
 #res <- test_irt("dt/irt_2pl_sample_100_item_50_dim_1", 10, 'EM',
 #                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 #                GenRandomPars = TRUE, custom_pars = FALSE)
-# 100样本，50题，1维，2参数，MHRM算法
+#print('100样本，50题，1维，2参数，MHRM算法')
 #res <- test_irt("dt/irt_2pl_sample_100_item_50_dim_1", 10, 'MHRM',
 #                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 #                GenRandomPars = FALSE, custom_pars = FALSE)
-# 200样本，50题，1维，2参数，EM算法
-res <- test_irt("dt/irt_2pl_sample_200_item_50_dim_1", 10, 'EM',
-                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-                GenRandomPars = FALSE, custom_pars = FALSE)
-#res <- test_irt("dt/irt_2pl_sample_100_item_50_dim_1", 10, 'EM',
+#print('200样本，50题，1维，2参数，EM算法')
+#res <- test_irt("dt/irt_2pl_sample_200_item_50_dim_1", 10, 'EM',
 #                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-#                GenRandomPars = FALSE, custom_pars = TRUE)
-print(str_c('success count:', res$success_ct))
-print(str_c('time_mean:', mean(res$time_lt)))
-print(str_c('mean_a:', mean(res$a)))
-print(str_c('std_a:', sd(res$a)))
-print(str_c('mean_b:', mean(res$b)))
-print(str_c('std_b:', sd(res$b)))
-print(str_c('mean_c:', mean(res$c)))
-print(str_c('std_c:', sd(res$c)))
-print(str_c('mean_d:', mean(res$d)))
-print(str_c('std_d:', sd(res$d)))
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('200样本，50题，1维，2参数，MHRM算法')
+#res <- test_irt("dt/irt_2pl_sample_200_item_50_dim_1", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('500样本，50题，1维，2参数，EM算法')
+#res <- test_irt("dt/irt_2pl_sample_500_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('500样本，50题，1维，2参数，MHRM算法')
+#res <- test_irt("dt/irt_2pl_sample_500_item_50_dim_1", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('500样本，50题，1维，3参数，EM算法')
+#res <- test_irt("dt/irt_3pl_sample_500_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+print('500样本，50题，1维，3参数，MHRM算法')
+res <- test_irt("dt/irt_3pl_sample_500_item_50_dim_1", 10, 'MHRM',
+                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+                GenRandomPars = FALSE, custom_pars = TRUE)
+
