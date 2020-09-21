@@ -664,51 +664,20 @@ class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
 class ArticleTest(TestCase):
 
-    def test_4pl_bbvi_try_10_item_50_sample_1000(self):
+    def test_2pl_bbvi_try_10_item_50_sample_100_dim_1(self):
         multiprocess_article_test_load_data_util(
-            model_name='4pl',
-            sample_size=1000,
+            model_name='2pl',
+            sample_size=100,
             item_size=50,
             x_feature_size=1,
-            vi_class=VIRT,
-            process_size=2,
-            vi_class_kwargs=None,
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
-            start_idx=0,
             try_count=10,
+            vi_class=VIRT,
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
+            start_idx=0,
+            process_size=2,
             folder='dt'
         )
-
-    # def test_2pl_bbvi_try_10_item_50_sample_100(self):
-    #     multiprocess_article_test_load_data_util(
-    #         file_prefix='irt_2pl_100',
-    #         try_count=10,
-    #         vi_class=VIRT,
-    #         vi_class_kwargs=None,
-    #         vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
-    #         process_size=2,
-    #         start_idx=0
-    #     )
-    #
-    # def test_2pl_bbvi_try_10_item_100_sample_200(self):
-    #     multiprocess_article_test_load_data_util(
-    #         file_prefix='irt_2pl_200',
-    #         vi_class=VIRT,
-    #         vi_class_kwargs=None,
-    #         vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-    #         start_idx=0,
-    #         process_size=2
-    #     )
-    #
-    # def test_2pl_bbvi_try_10_item_50_sample_500(self):
-    #     multiprocess_article_test_load_data_util(
-    #         file_prefix='irt_2pl_500',
-    #         vi_class=VIRT,
-    #         vi_class_kwargs=None,
-    #         vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-    #         start_idx=0,
-    #         process_size=2
-    #     )
 
     # 均摊变分推断
     def test_2pl_ai_try_10_item_50_sample_100_dim_1(self):
@@ -732,8 +701,8 @@ class ArticleTest(TestCase):
             item_size=50,
             try_count=10,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 20},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            vi_class_kwargs={'subsample_size': 100},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 1000},
             random_class=RandomIrt2PL,
             random_class_kwargs=None,
             start_idx=0,

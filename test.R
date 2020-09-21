@@ -118,24 +118,23 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
   rmse$time_lt <- time_lt
   return(rmse)
 }
-#res <- test_2pl("irt_2pl_100_", 10, 'EM')
-#res <- test_2pl("irt_2pl_100_", 10, 'MHRM')
-#res <- test_2pl("irt_2pl_200_", 10, 'EM')
-#res <- test_2pl("irt_2pl_200_", 10, 'MHRM')
-#res <- test_2pl("irt_2pl_500_", 10, 'EM')
-#res <- test_2pl("irt_2pl_500_", 10, 'MHRM')
-#res <- test_3pl("irt_3pl_500_", 10, 'EM')
-#res <- test_4pl("irt_4pl_1000_", 10, 'MHRM', technical = list(NCYCLES=2000))
-#res <- test_2pl("irt_2pl_1000_", 10, 'EM')
-#res <- test_irt("irt_3pl_10000_item_50_dim_5", 10, 'MHRM',
-##                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-##                GenRandomPars = TRUE)
-
-res <- test_irt("irt_3pl_sample_5000_item_50_dim_5", 10, 'MHRM',
-                technical = list(NCYCLES = 2, info_if_converged = FALSE, logLik_if_converged = FALSE),
+## 100样本，50题，1维，2参数，EM算法
+#res <- test_irt("dt/irt_2pl_sample_100_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = TRUE, custom_pars = FALSE)
+# 100样本，50题，1维，2参数，MHRM算法
+#res <- test_irt("dt/irt_2pl_sample_100_item_50_dim_1", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+# 200样本，50题，1维，2参数，EM算法
+res <- test_irt("dt/irt_2pl_sample_200_item_50_dim_1", 10, 'EM',
+                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
                 GenRandomPars = FALSE, custom_pars = FALSE)
+#res <- test_irt("dt/irt_2pl_sample_100_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = TRUE)
 print(str_c('success count:', res$success_ct))
-print(str_c('time_mean:', mean(remse$time_lt)))
+print(str_c('time_mean:', mean(res$time_lt)))
 print(str_c('mean_a:', mean(res$a)))
 print(str_c('std_a:', sd(res$a)))
 print(str_c('mean_b:', mean(res$b)))
