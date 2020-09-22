@@ -156,8 +156,31 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
 #res <- test_irt("dt/irt_3pl_sample_500_item_50_dim_1", 10, 'EM',
 #                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 #                GenRandomPars = FALSE, custom_pars = FALSE)
-print('500样本，50题，1维，3参数，MHRM算法')
-res <- test_irt("dt/irt_3pl_sample_500_item_50_dim_1", 10, 'MHRM',
+#print('500样本，50题，1维，3参数，MHRM算法')
+#res <- test_irt("dt/irt_3pl_sample_500_item_50_dim_1", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('1000样本，50题，1维，3参数，EM算法')
+#res <- test_irt("dt/irt_3pl_sample_1000_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+print('1000样本，50题，1维，3参数，MHRM算法')
+res <- test_irt("dt/irt_3pl_sample_1000_item_50_dim_1", 10, 'MHRM',
                 technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-                GenRandomPars = FALSE, custom_pars = TRUE)
-
+                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('500样本，50题，1维，4参数，EM算法')
+#res <- test_irt("dt/irt_4pl_sample_500_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('500样本，50题，1维，4参数，MHRM算法')
+#res <- test_irt("dt/irt_4pl_sample_500_item_50_dim_1", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = TRUE)
+#print('1000样本，50题，1维，4参数，EM算法')
+#res <- test_irt("dt/irt_4pl_sample_1000_item_50_dim_1", 10, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)
+#print('1000样本，50题，1维，4参数，MHRM算法')
+#res <- test_irt("dt/irt_4pl_sample_1000_item_50_dim_1", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = TRUE)
