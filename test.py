@@ -62,12 +62,12 @@ def article_test_load_data_util(
     if vi_fit_kwargs is not None:
         vi_fit_kwargs_.update(vi_fit_kwargs)
     vi_model.fit(random_instance=r, **vi_fit_kwargs_)
-    rmse_dt = rmse_(item_size, model_name, r, x_feature_size)
+    rmse_dt = irt_rmse_(item_size, model_name, r, x_feature_size)
     pyro.clear_param_store()
     return rmse_dt
 
 
-def rmse_(item_size, model_name, r, x_feature):
+def irt_rmse_(item_size, model_name, r, x_feature):
     rmse_dt = {}
     if model_name in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
         a = pyro.param('a')
@@ -90,6 +90,26 @@ def rmse_(item_size, model_name, r, x_feature):
         rmse_dt['d'] = d_rmse.item()
     return rmse_dt
 
+def cdm_rmse_(model_name, r):
+    rmse_dt = {}
+    g = pyro.param('g')
+    g_rmse = (g - r.g).pow(2).sqrt().mean()
+    rmse_dt['g'] = g_rmse.item()
+    print('g:{0}'.format(g_rmse))
+    s = pyro.param('s')
+    s_rmse = (s - r.s).pow(2).sqrt().mean()
+    rmse_dt['s'] = s_rmse.item()
+    print('s:{0}'.format(s_rmse))
+    if model_name == 'ho_dina':
+        lam0 = pyro.param('lam0')
+        lam0_rmse = (lam0 - r.lam0).pow(2).sqrt().mean()
+        rmse_dt['lam0'] = lam0_rmse.item()
+        print('lam0:{0}'.format(lam0_rmse))
+        lam1 = pyro.param('lam1')
+        lam1_rmse = (lam1 - r.lam1).pow(2).sqrt().mean()
+        rmse_dt['lam1'] = lam1_rmse.item()
+        print('lam1:{0}'.format(lam1_rmse))
+    return rmse_dt
 
 def multiprocess_article_test_load_data_util(
         model_name,
@@ -153,42 +173,69 @@ def article_test_util(
         folder=None,
 ):
     model_name = random_class.name
+    model_type = 'irt'
+    if model_name in ('dina', 'dino', 'ho_dina'):
+        model_type = 'cdm'
     random_class_kwargs_ = {'sample_size': sample_size, 'item_size': item_size}
     if random_class_kwargs is not None:
         random_class_kwargs_.update(random_class_kwargs)
     torch.manual_seed(int(random.random() * 1000))
     r = random_class(**random_class_kwargs_)
     y = r.y
-    x_feature = r.x.size(1)
     if folder is not None:
         if not os.path.exists(folder):
             os.mkdir(folder)
         folder = f'{folder}/'
     else:
         folder = ''
-    np.savetxt(
-        f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_{file_postfix}.txt',
-        y.numpy()
-    )
-    np.savetxt(
-        f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_b_{file_postfix}.txt',
-        r.b.numpy()
-    )
-    if hasattr(r, 'a'):
+    if model_type == 'irt':
+        x_feature = r.x.size(1)
         np.savetxt(
-            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_a_{file_postfix}.txt',
-            r.a.T.numpy()
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_{file_postfix}.txt',
+            y.numpy()
         )
-    if hasattr(r, 'c'):
         np.savetxt(
-            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_c_{file_postfix}.txt',
-            r.c.T.numpy())
-    if hasattr(r, 'd'):
-        np.savetxt(
-            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_d_{file_postfix}.txt',
-            r.d.T.numpy()
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_b_{file_postfix}.txt',
+            r.b.numpy()
         )
-    vi_class_kwargs_ = {'data': y, 'model': model_name, 'subsample_size': 100, 'x_feature': x_feature}
+        if hasattr(r, 'a'):
+            np.savetxt(
+                f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_a_{file_postfix}.txt',
+                r.a.T.numpy()
+            )
+        if hasattr(r, 'c'):
+            np.savetxt(
+                f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_c_{file_postfix}.txt',
+                r.c.T.numpy())
+        if hasattr(r, 'd'):
+            np.savetxt(
+                f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_dim_{x_feature}_d_{file_postfix}.txt',
+                r.d.T.numpy()
+            )
+        vi_class_kwargs_ = {'data': y, 'model': model_name, 'subsample_size': 100, 'x_feature': x_feature}
+    else:
+        np.savetxt(
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_{file_postfix}.txt',
+            y.numpy()
+        )
+        np.savetxt(
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_g_{file_postfix}.txt',
+            r.g.numpy()
+        )
+        np.savetxt(
+            f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_g_{file_postfix}.txt',
+            r.s.numpy()
+        )
+        if hasattr(r, 'lam0'):
+            np.savetxt(
+                f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_lam0_{file_postfix}.txt',
+                r.lam0.numpy()
+            )
+            np.savetxt(
+                f'{folder}{random_class.name or "data"}_sample_{sample_size}_item_{item_size}_lam1_{file_postfix}.txt',
+                r.lam1.numpy()
+            )
+        vi_class_kwargs_ = {'data': y, 'model': model_name, 'subsample_size': 100, 'q': r.q}
     if vi_class_kwargs is not None:
         vi_class_kwargs_.update(vi_class_kwargs)
     vi_model = vi_class(**vi_class_kwargs_)
@@ -196,7 +243,10 @@ def article_test_util(
     if vi_fit_kwargs is not None:
         vi_fit_kwargs_.update(vi_fit_kwargs)
     vi_model.fit(random_instance=r, **vi_fit_kwargs_)
-    rmse_dt = rmse_(item_size, model_name, r, x_feature)
+    if model_type == 'irt':
+        rmse_dt = irt_rmse_(item_size, model_name, r, x_feature)
+    else:
+        rmse_dt = cdm_rmse_(model_name, r)
     pyro.clear_param_store()
     return rmse_dt
 
@@ -523,7 +573,7 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))
 
     def test_ai(self):
-        y, q, random_instance = self.gen_sample(RandomDina, 10000, q_size=20, item_size=2000)
+        y, q, random_instance = self.gen_sample(RandomDina, 10000, q_size=5, item_size=100)
         model = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam(self.optim_ai), max_iter=100000)
 
@@ -561,7 +611,7 @@ class PaDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
-        y, q, random_instance = self.gen_sample(RandomDina, 100000, q_size=10)
+        y, q, random_instance = self.gen_sample(RandomDina, 1000, q_size=5)
         model = VaeCCDM(data=y, q=q, model='dina', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
@@ -645,21 +695,7 @@ class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         y, q, random_instance = self.gen_sample(RandomHoDina, sample_size)
         subsample_size = 100
         model = VaeCHoDina(data=y, q=q, subsample_size=subsample_size)
-
-        def optim(_, pn):
-            if pn in ('lam1', 'lam0', 'g', 's'):
-                return {'lr': 1e-1}
-            return {'lr': 1e-3}
-
-        scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
-                                 'optim_args': optim,
-                                 'milestones': [
-                                     int(sample_size / subsample_size) * 40,
-                                     int(sample_size / subsample_size) * 50,
-                                 ],
-                                 'gamma': 0.1,
-                                 })
-        model.fit(random_instance=random_instance, optim=scheduler)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
 class ArticleTest(TestCase):
@@ -810,8 +846,8 @@ class ArticleTest(TestCase):
             sample_size=5000,
             item_size=50,
             vi_class=VIRT,
-            vi_class_kwargs={'subsample_size': 1000},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 3000},
+            vi_class_kwargs={'subsample_size': 5000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 4000},
             start_idx=0,
             try_count=10,
             process_size=2,
@@ -996,7 +1032,7 @@ class ArticleTest(TestCase):
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
             random_class=RandomIrt3PL,
             random_class_kwargs={'x_feature': 5},
             start_idx=0,
@@ -1023,39 +1059,7 @@ class ArticleTest(TestCase):
 
     # mil数据
 
-    # 多维3参数
-    def test_3pl_mil_ai_try_10_item_50_sample_5000_dim_3(self):
-
-        multiprocess_article_test_util(
-            sample_size=5000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt3PL,
-            random_class_kwargs={'x_feature': 3},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='mil'
-        )
-
-    def test_4pl_mil_ai_try_10_item_50_sample_5000_dim_3(self):
-
-        multiprocess_article_test_util(
-            sample_size=5000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt4PL,
-            random_class_kwargs={'x_feature': 3},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='mil'
-        )
-
+    # 多维4参数
     def test_3pl_mil_ai_try_10_item_50_sample_5000_dim_5(self):
 
         multiprocess_article_test_util(
@@ -1072,7 +1076,7 @@ class ArticleTest(TestCase):
             folder='mil'
         )
 
-    def test_4pl_mil_ai_try_10_item_50_sample_7000_dim_5(self):
+    def test_4pl_mil_ai_try_10_item_50_sample_5000_dim_5(self):
 
         multiprocess_article_test_util(
             sample_size=5000,
@@ -1081,121 +1085,58 @@ class ArticleTest(TestCase):
             vi_class_kwargs={'subsample_size': 100},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
             random_class=RandomMilIrt4PL,
-            random_class_kwargs={'x_feature': 5},
+            random_class_kwargs={'x_featu re': 5},
             start_idx=0,
             try_count=10,
             process_size=2,
             folder='mil'
         )
 
-    def test_3pl_mil_ai_try_10_item_50_sample_7000_dim_3(self):
+    def test_3pl_mil_ai_try_10_item_50_sample_10000_dim_10(self):
 
         multiprocess_article_test_util(
             sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
+            vi_class_kwargs={'subsample_size': 200},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
             random_class=RandomMilIrt3PL,
-            random_class_kwargs={'x_feature': 3},
+            random_class_kwargs={'x_feature': 10},
             start_idx=0,
             try_count=10,
             process_size=2,
             folder='mil'
         )
 
-    def test_4pl_mil_ai_try_10_item_50_sample_7000_dim_3(self):
+    def test_4pl_mil_ai_try_10_item_50_sample_10000_dim_10(self):
 
         multiprocess_article_test_util(
             sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
+            vi_class_kwargs={'subsample_size': 200},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
             random_class=RandomMilIrt4PL,
-            random_class_kwargs={'x_feature': 3},
+            random_class_kwargs={'x_feature': 10},
             start_idx=0,
             try_count=10,
             process_size=2,
             folder='mil'
         )
-
-    def test_3pl_mil_ai_try_10_item_50_sample_7000_dim_5(self):
-
-        multiprocess_article_test_util(
-            sample_size=10000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt3PL,
-            random_class_kwargs={'x_feature': 5},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='mil'
-        )
-
-    def test_3pl_mil_ai_try_10_item_50_sample_10000_dim_3(self):
+    
+    # 认知诊断
+    def test_dina_ai_try_10_item_100_sample_1000(self):
 
         multiprocess_article_test_util(
-            sample_size=10000,
-            item_size=50,
-            vi_class=VaeIRT,
+            sample_size=1000,
+            item_size=100,
+            vi_class=VaeCCDM,
             vi_class_kwargs={'subsample_size': 100},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt3PL,
-            random_class_kwargs={'x_feature': 3},
+            random_class=RandomDina,
+            random_class_kwargs={'q_size': 6},
             start_idx=0,
             try_count=10,
-            process_size=2,
-            folder='mil'
-        )
-
-    def test_4pl_mil_ai_try_10_item_50_sample_10000_dim_3(self):
-
-        multiprocess_article_test_util(
-            sample_size=10000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt4PL,
-            random_class_kwargs={'x_feature': 3},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='mil'
-        )
-
-    def test_3pl_mil_ai_try_10_item_50_sample_10000_dim_5(self):
-
-        multiprocess_article_test_util(
-            sample_size=10000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt3PL,
-            random_class_kwargs={'x_feature': 5},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='mil'
-        )
-
-    def test_4pl_mil_ai_try_10_item_50_sample_10000_dim_5(self):
-
-        multiprocess_article_test_util(
-            sample_size=10000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
-            random_class=RandomMilIrt4PL,
-            random_class_kwargs={'x_feature': 5},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='mil'
+            process_size=1,
+            folder='cdm'
         )

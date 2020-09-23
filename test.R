@@ -216,7 +216,11 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
 #res <- test_irt("dt/irt_3pl_sample_10000_item_50_dim_5", 10, 'MHRM',
 #                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 #                GenRandomPars = FALSE, custom_pars = TRUE)
-print('mil,5000样本，50题，5维，3参数，MHRM算法')
-res <- test_irt("mil/irt_3pl_sample_5000_item_50_dim_3", 10, 'MHRM',
+#print('mil,5000样本，50题，5维，3参数，MHRM算法')
+#res <- test_irt("mil/irt_3pl_sample_5000_item_50_dim_5", 10, 'MHRM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = TRUE, custom_pars = FALSE)
+print('mil,5000样本，50题，5维，4参数，MHRM算法')
+res <- test_irt("mil/irt_4pl_sample_5000_item_50_dim_5", 10, 'MHRM',
                 technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-                GenRandomPars = TRUE, custom_pars = FALSE)
+                GenRandomPars = FALSE, custom_pars = TRUE)
