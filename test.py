@@ -773,6 +773,51 @@ class ArticleTest(TestCase):
             folder='dt'
         )
 
+    def test_2pl_bbvi_try_10_item_50_sample_1000_dim_2(self):
+        multiprocess_article_test_load_data_util(
+            model_name='2pl',
+            x_feature_size=2,
+            sample_size=1000,
+            item_size=50,
+            vi_class=VIRT,
+            vi_class_kwargs={'subsample_size': 1000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+            folder='dt'
+        )
+
+    def test_2pl_bbvi_try_10_item_50_sample_1000_dim_3(self):
+        multiprocess_article_test_load_data_util(
+            model_name='2pl',
+            x_feature_size=3,
+            sample_size=1000,
+            item_size=50,
+            vi_class=VIRT,
+            vi_class_kwargs={'subsample_size': 1000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+            folder='dt'
+        )
+
+    def test_2pl_bbvi_try_10_item_50_sample_5000_dim_3(self):
+        multiprocess_article_test_load_data_util(
+            model_name='2pl',
+            x_feature_size=3,
+            sample_size=5000,
+            item_size=50,
+            vi_class=VIRT,
+            vi_class_kwargs={'subsample_size': 1000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 3000},
+            start_idx=0,
+            try_count=10,
+            process_size=2,
+            folder='dt'
+        )
+
     # 均摊变分推断
     # 2参数
     def test_2pl_ai_try_10_item_50_sample_100_dim_1(self):
@@ -889,7 +934,7 @@ class ArticleTest(TestCase):
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 7000},
+            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 7000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 2},
             start_idx=0,
@@ -913,43 +958,13 @@ class ArticleTest(TestCase):
             folder='dt'
         )
 
-    def test_2pl_ai_try_10_item_50_sample_5000_dim_3(self):
-        multiprocess_article_test_util(
-            sample_size=5000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 500},
-            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 5000},
-            random_class=RandomIrt2PL,
-            random_class_kwargs={'x_feature': 3},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='dt'
-        )
-
-    def test_2pl_ai_try_10_item_50_sample_10000_dim_3(self):
-        multiprocess_article_test_util(
-            sample_size=10000,
-            item_size=50,
-            vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 500},
-            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 10000},
-            random_class=RandomIrt2PL,
-            random_class_kwargs={'x_feature': 3},
-            start_idx=0,
-            try_count=10,
-            process_size=2,
-            folder='dt'
-        )
-
     def test_2pl_ai_try_10_item_50_sample_5000_dim_5(self):
         multiprocess_article_test_util(
             sample_size=5000,
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 500},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 10000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 5},
             start_idx=0,
@@ -996,8 +1011,8 @@ class ArticleTest(TestCase):
             sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
+            vi_class_kwargs={'subsample_size': 500},
+            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 10000},
             random_class=RandomIrt3PL,
             random_class_kwargs={'x_feature': 5},
             start_idx=0,
