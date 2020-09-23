@@ -782,41 +782,7 @@ class BaseCDM(BasePsy):
                     t.set_postfix(loss=loss, **postfix_kwargs)
 
 
-class VaeCDM(BaseCDM):
-    # 基于变分自编码器的CDM参数估计
-    def __init__(self, hidden_dim=64, *args, **kwargs):
-        """
-        :param hidden_dim: 隐藏层实例
-        :param args:
-        :param kwargs:
-        """
-        super().__init__(*args, **kwargs)
-        self.encoder = BinEncoder(self.item_size, self.attr_size, hidden_dim)
-
-    def guide(self, data):
-        sample_size = self.sample_size
-        pyro.module('encoder', self.encoder)
-        with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
-            attr_p = self.encoder.forward(data[idx])
-            pyro.sample(
-                'attr',
-                dist.Bernoulli(attr_p).to_event(1)
-            )
-
-
 class VCDM(BaseCDM):
-    # 基于黑盒变分推断的CDM参数估计
-    def guide(self, data):
-        sample_size = self.sample_size
-        attr_p = pyro.param('attr_p', torch.zeros((sample_size, self.attr_size)) + 0.5, constraint=constraints.unit_interval)
-        with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
-            pyro.sample(
-                'attr',
-                dist.Bernoulli(attr_p[idx]).to_event(1)
-            )
-
-
-class VCCDM(BaseCDM):
     # 基于离散潜变量黑盒变分推断的CDM参数估计，效果绝佳
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -863,7 +829,7 @@ class VCCDM(BaseCDM):
         super().fit(loss=loss, *args, **kwargs)
 
 
-class VaeCCDM(VCCDM):
+class VaeCDM(VCDM):
     # 基于离散潜变量变分自编码器的CDM参数估计，效果绝佳
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -891,7 +857,7 @@ class VaeCCDM(VCCDM):
             pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
 
-class VCHoDina(VCCDM):
+class VHoDina(VCDM):
     # 基于离散潜变量黑盒变分推断的HO-DINA参数估计，效果绝佳
 
     @config_enumerate
@@ -958,7 +924,7 @@ class VCHoDina(VCCDM):
                     t.set_postfix(loss=loss, **postfix_kwargs)
 
 
-class VaeCHoDina(VCHoDina):
+class VaeHoDina(VHoDina):
     # 基于离散潜变量变分自编码器的HO-DINA参数估计，效果绝佳
 
     def __init__(self, hidden_dim=64, *args, **kwargs):

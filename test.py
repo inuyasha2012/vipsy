@@ -10,7 +10,7 @@ from pyro.infer import Trace_ELBO, TraceEnum_ELBO, HMC, NUTS, MCMC
 from pyro.optim import Adam, StepLR, MultiStepLR, PyroLRScheduler
 import torch
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
-    VaeIRT, VIRT, VCDM, VaeCDM, VCCDM, VaeCCDM, VCHoDina, VaeCHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL
+    VaeIRT, VIRT, VCDM, VaeCDM, VCDM, VaeCDM, VHoDina, VaeHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL
 from pyro import distributions as dist
 from multiprocessing import Pool
 
@@ -568,55 +568,17 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         self.prepare_cuda()
 
     def test_bbvi(self):
-        y, q, random_instance = self.gen_sample(RandomDina, 1000)
-        model = VCDM(data=y, q=q, model='dina', subsample_size=1000)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))
-
-    def test_ai(self):
-        y, q, random_instance = self.gen_sample(RandomDina, 10000, q_size=5, item_size=100)
-        model = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam(self.optim_ai), max_iter=100000)
-
-    @staticmethod
-    def optim_ai(_, param_name):
-        if param_name in ('g'):
-            return {"lr": 1e-3}
-        return {'lr': 5e-4}
-
-
-class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
-
-    def setUp(self):
-        self.prepare_cuda()
-
-    def test_bbvi(self):
-        y, q, random_instance = self.gen_sample(RandomDino, 1000)
-        model = VCDM(data=y, q=q, model='dino', subsample_size=1000)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
-
-    def test_ai(self):
-        y, q, random_instance = self.gen_sample(RandomDino, 100000)
-        model = VaeCDM(data=y, q=q, model='dino', subsample_size=100)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=10000)
-
-
-class PaDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
-
-    def setUp(self):
-        self.prepare_cuda()
-
-    def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDina, 1500)
-        model = VCCDM(data=y, q=q, model='dina', subsample_size=1500)
+        model = VCDM(data=y, q=q, model='dina', subsample_size=1500)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDina, 1000, q_size=5)
-        model = VaeCCDM(data=y, q=q, model='dina', subsample_size=100)
+        model = VaeCDM(data=y, q=q, model='dina', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
-class PaDinaMissingTestCase(TestCase, TestMixin, CDMRandomMixin):
+class DinaMissingTestCase(TestCase, TestMixin, CDMRandomMixin):
     # 缺失数据下的变分推断
 
     def setUp(self):
@@ -632,7 +594,7 @@ class PaDinaMissingTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_missing_y(sample_size=10000, missing_rate=0.9, item_size=1000)
-        model = VCCDM(data=y, q=q, model='dina', subsample_size=100)
+        model = VCDM(data=y, q=q, model='dina', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
@@ -645,7 +607,7 @@ class PaDinaMissingTestCase(TestCase, TestMixin, CDMRandomMixin):
         # np.savetxt(f'ho_dina_{sample_size}_lam0.txt', random_instance.lam0.numpy())
         # np.savetxt(f'ho_dina_{sample_size}_lam1.txt', random_instance.lam1.numpy())
         subsample_size = 20
-        model = VaeCHoDina(data=y, q=q, model='dina', subsample_size=subsample_size)
+        model = VaeHoDina(data=y, q=q, model='dina', subsample_size=subsample_size)
         scheduler = MultiStepLR({'optimizer': torch.optim.Adam,
                                  'optim_args': self.optim,
                                  'milestones': [
@@ -664,37 +626,38 @@ class PaDinaMissingTestCase(TestCase, TestMixin, CDMRandomMixin):
             return {'lr': 1e-1}
         return {'lr': 1e-3}
 
-class PaDinoTestCase(TestCase, TestMixin, CDMRandomMixin):
+
+class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def setUp(self):
         self.prepare_cuda()
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDino, 1000)
-        model = VCCDM(data=y, q=q, model='dino', subsample_size=1000)
+        model = VCDM(data=y, q=q, model='dino', subsample_size=1000)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDino, 10000)
-        model = VaeCCDM(data=y, q=q, model='dino', subsample_size=50)
+        model = VaeCDM(data=y, q=q, model='dino', subsample_size=50)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))
 
 
-class PaHoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
+class HoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def setUp(self):
         self.prepare_cuda()
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomHoDina, 1000)
-        model = VCHoDina(data=y, q=q, subsample_size=1000)
+        model = VHoDina(data=y, q=q, subsample_size=1000)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-1}))
 
     def test_ai(self):
         sample_size = 10000
         y, q, random_instance = self.gen_sample(RandomHoDina, sample_size)
         subsample_size = 100
-        model = VaeCHoDina(data=y, q=q, subsample_size=subsample_size)
+        model = VaeHoDina(data=y, q=q, subsample_size=subsample_size)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
 
 
@@ -1128,13 +1091,13 @@ class ArticleTest(TestCase):
     def test_dina_ai_try_10_item_100_sample_1000(self):
 
         multiprocess_article_test_util(
-            sample_size=1000,
+            sample_size=10000,
             item_size=100,
-            vi_class=VaeCCDM,
+            vi_class=VaeCDM,
             vi_class_kwargs={'subsample_size': 100},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
             random_class=RandomDina,
-            random_class_kwargs={'q_size': 6},
+            random_class_kwargs={'q_size': 5},
             start_idx=0,
             try_count=10,
             process_size=1,
