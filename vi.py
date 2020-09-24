@@ -120,6 +120,22 @@ def ho_dina(lam0, lam1, theta, q, g, s):
 # ======随机数据生成 start=======
 
 
+class RandomMissing(object):
+
+    def __init__(self, missing_rate, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.missing_rate = missing_rate
+
+    @property
+    def y(self):
+        _y = super().y
+        y_size = _y.size(0) * _y.size(1)
+        row_idx = torch.arange(0, _y.size(0)).repeat(int(_y.size(1) * self.missing_rate))
+        col_idx = torch.randint(0, _y.size(1), (int(y_size * self.missing_rate),))
+        _y[row_idx, col_idx] = nan
+        return _y
+
+
 class RandomPsyData(object):
 
     def __init__(self, sample_size=10000, item_size=100, *args, **kwargs):
@@ -199,6 +215,10 @@ class RandomHoDina(RandomDina):
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
+class RandomMissingHoDina(RandomMissing, RandomHoDina):
+    pass
+
+
 class RandomIrt1PL(RandomPsyData):
     # 生成随机单参数IRT模型数据
     name = 'irt_1pl'
@@ -262,6 +282,10 @@ class RandomIrt2PL(RandomIrt1PL):
     def y(self):
         p = irt_2pl(self.x, self.a, self.b, self.D)
         return torch.FloatTensor(*p.size()).bernoulli_(p)
+
+
+class RandomMissingIrt2PL(RandomMissing, RandomIrt2PL):
+    pass
 
 
 class RandomIrt3PL(RandomIrt2PL):
