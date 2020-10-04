@@ -2,6 +2,9 @@ import math
 import random
 from math import nan
 
+from pyro.distributions.transforms import neural_autoregressive, corr_cholesky_constraint, CorrLCholeskyTransform
+from sklearn.metrics import roc_auc_score
+
 import numpy as np
 import torch
 import torch.distributions
@@ -76,26 +79,9 @@ def dina(attr, q, g, s):
     :return:反应概率
     """
     yita = attr.mm(q)
-    aa = (q ** 2).sum(dim=0)
-    yita[yita < aa] = 0
-    yita[yita == aa] = 1
-    p = (1 - s) ** yita * g ** (1 - yita)
-    return p
-
-
-def dino(attr, q, g, s):
-    """
-    DINO模型
-    :param attr: 属性掌握模式
-    :param q: Q矩阵
-    :param g: 猜测参数
-    :param s: 手滑参数
-    :return: 反应概率
-    """
-    yita = (1 - attr).mm(q)
-    aa = (q ** 2).sum(dim=0)
-    yita[yita < aa] = 1
-    yita[yita == aa] = 0
+    qq = (q ** 2).sum(dim=0)
+    yita[yita < qq] = 0
+    yita[yita == qq] = 1
     p = (1 - s) ** yita * g ** (1 - yita)
     return p
 
@@ -177,16 +163,6 @@ class RandomDina(RandomPsyData):
         return torch.FloatTensor(*p.size()).bernoulli_(p)
 
 
-class RandomDino(RandomDina):
-    # 生成随机DINO模型数据
-    name = 'dino'
-
-    @property
-    def y(self):
-        p = dino(self.attr, self.q, self.g, self.s)
-        return torch.FloatTensor(*p.size()).bernoulli_(p)
-
-
 class RandomHoDina(RandomDina):
     # 生成随机HO-DINA模型数据
     name = 'ho_dina'
@@ -228,6 +204,7 @@ class RandomIrt1PL(RandomPsyData):
             x_feature=1,
             x_local=0,
             x_scale=1,
+            x_cov=None,
             b_local=0,
             b_scale=1,
             D=1,
@@ -245,7 +222,10 @@ class RandomIrt1PL(RandomPsyData):
         """
         super().__init__(*args, **kwargs)
         self.x_feature = x_feature
-        self.x = torch.FloatTensor(self.sample_size, x_feature).normal_(x_local, x_scale)
+        if x_cov is None:
+            self.x = torch.FloatTensor(self.sample_size, x_feature).normal_(x_local, x_scale)
+        else:
+            self.x = dist.MultivariateNormal(x_local, scale_tril=x_cov).sample((self.sample_size,))
         self.b = torch.FloatTensor(1, self.item_size).normal_(b_local, b_scale)
         self.D = D
 
@@ -468,6 +448,7 @@ class MvnEncoder(nn.Module):
         self.fc22 = nn.Linear(hidden_dim, int(x_dim * (x_dim + 1) / 2))
         self.x_dim = x_dim
         self.softplus = nn.Softplus()
+        self.transform = LowerCholeskyTransform()
 
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
@@ -476,23 +457,8 @@ class MvnEncoder(nn.Module):
         x_scale = torch.zeros(x_scale_.shape[:-1] + (self.x_dim, self.x_dim))
         idx = torch.tril_indices(self.x_dim, self.x_dim)
         x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
-        return x_loc, x_scale
-
-
-class BinEncoder(nn.Module):
-
-    def __init__(self, item_size, x_dim, hidden_dim):
-        super().__init__()
-        self.fc1 = nn.Linear(item_size, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, x_dim)
-        self.softplus = nn.Softplus()
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        hidden = self.softplus(self.fc1(x))
-        p = self.sigmoid(self.fc2(hidden))
-        return p
-
+        return x_loc, self.transform(x_scale)
+    
 
 class SoftmaxEncoder(nn.Module):
 
@@ -569,15 +535,17 @@ class BaseIRT(BasePsy):
     def __init__(self,
                  model='irt_2pl',
                  x_feature=1,
-                 share_cov=False,
+                 share_posterior_cov=False,
+                 share_prior_cov=False,
                  D=1,
+                 prior_free=False,
                  *args,
                  **kwargs
                  ):
         """
         :param model: irt模型，内容参考IRT_FUN键值
         :param x_feature: 潜变量特征维度数
-        :param share_cov: 是否共享方差协方差矩阵
+        :param share_posterior_cov: 是否共享后验方差协方差矩阵
         :param D: irt模型的D值，一般是1.702或1
         :param args:
         :param kwargs:
@@ -585,8 +553,10 @@ class BaseIRT(BasePsy):
         super().__init__(*args, **kwargs)
         self._model = model
         self.x_feature = x_feature
-        self.share_cov = share_cov
+        self.share_posterior_cov = share_posterior_cov
+        self.share_prior_cov = share_prior_cov
         self.D = D
+        self.prior_free = prior_free
         self.a_free = kwargs.get('a_free')
         self.a0 = kwargs.get('a0', torch.ones((self.x_feature, self.item_size)))
         if x_feature > 1 and self.a_free is None:
@@ -618,25 +588,41 @@ class BaseIRT(BasePsy):
                 p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
                 pyro.sample('y', dist.Bernoulli(p), obs=data_)
         else:
-            with pyro.plate("data", sample_size) as idx:
-                if self.share_cov:
+            x_cov0 = torch.eye(self.x_feature)
+            if self.share_prior_cov:
+                if self.prior_free:
+                    x_cov = pyro.param('x_cov', x_cov0, constraint=constraints.corr_cholesky_constraint)
+                else:
+                    x_cov = x_cov0
+                with pyro.plate("data", sample_size) as idx:
                     irt_param_kwargs['x'] = pyro.sample(
                         'x',
                         dist.MultivariateNormal(
                             torch.zeros((len(idx), self.x_feature)),
-                            scale_tril=torch.eye(self.x_feature)
+                            scale_tril=x_cov
                         )
+                    )
+                    p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
+                    pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
+            else:
+                if self.prior_free:
+                    x_cov = pyro.param(
+                        'x_cov',
+                        x_cov0.repeat(sample_size, 1, 1),
+                        constraint=constraints.corr_cholesky_constraint
                     )
                 else:
+                    x_cov = x_cov0.repeat(sample_size, 1, 1)
+                with pyro.plate("data", sample_size) as idx:
                     irt_param_kwargs['x'] = pyro.sample(
                         'x',
                         dist.MultivariateNormal(
                             torch.zeros((len(idx), self.x_feature)),
-                            scale_tril=torch.eye(self.x_feature).repeat(len(idx), 1, 1)
+                            scale_tril=x_cov[idx]
                         )
                     )
-                p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
-                pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
+                    p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
+                    pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
     def _get_p_data(self, data, idx, irt_param_kwargs):
         irt_fun = self.IRT_FUN[self._model]
@@ -647,6 +633,44 @@ class BaseIRT(BasePsy):
             data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
             p = torch.where(data_nan, torch.full_like(p, 0), p)
         return p, data_
+
+    def get_roc_auc(self, data):
+        with torch.no_grad():
+            data_nan = torch.isnan(data)
+            if data_nan.any():
+                data = torch.where(data_nan, torch.full_like(data, -1), data)
+            num_posterior_samples = 1
+            a = pyro.param('a')
+            b = pyro.param('b')
+            x_local, x_scale = self.encoder.forward(data)
+            # if self.x_feature == 1:
+            #     x = dist.Normal(x_local, x_scale).sample((num_posterior_samples,))
+            # else:
+            #     transform = LowerCholeskyTransform()
+            #     x = dist.MultivariateNormal(x_local, scale_tril=transform(x_scale)).sample((num_posterior_samples,))
+            y_pred = []
+            for i in range(num_posterior_samples):
+                y = irt_2pl(x_local, a, b)
+                y_pred.append(y[data != -1])
+            y_pred = torch.stack(y_pred).view(-1)
+            y_true = data[data != -1].repeat(num_posterior_samples, 1).view(-1)
+            roc_auc = roc_auc_score(
+                y_true.numpy(),
+                y_pred.numpy(),
+            )
+            return roc_auc
+
+    def get_marginal(self, data):
+        with torch.no_grad():
+            posterior = Importance(
+                model=self.model,
+                guide=self.guide,
+                num_samples=100,
+            )
+            posterior = posterior.run(data)
+            log_weights = torch.stack(posterior.log_weights)
+            marginal = torch.logsumexp(log_weights, 0) - math.log(log_weights.size(0))
+        return marginal
 
     def fit(self, optim=Adam({'lr': 5e-2}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         """
@@ -662,11 +686,22 @@ class BaseIRT(BasePsy):
                 loss = svi.step(self.data)
                 if isinstance(optim, PyroLRScheduler):
                     optim.step()
+                # if i % 3500 == 0:
+                #     # marginal = self.test().item()
+                #     # print(marginal)
+                #     val_data = self.kwargs.get('val_data', self.data)
+                #     roc_auc = self.get_roc_auc(val_data)
+                #     print(roc_auc)
+                #     # roc_auc1 = self.get_roc_auc(self.data)
+                #     # print(roc_auc1)
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
                         b = pyro.param('b')
                         postfix_kwargs['threshold_error'] = '{0}'.format((b - random_instance.b).pow(2).sqrt().mean())
+                        # x, _ = self.encoder.forward(self.data)
+                        # x = pyro.param('x_local')
+                        # postfix_kwargs['x_error'] = '{0}'.format((x - random_instance.x).pow(2).sqrt().mean())
                         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
                             a = pyro.param('a')
                             a_error = (a - random_instance.a).pow(2).sqrt().sum() / (self.x_feature * self.item_size - self.x_feature * (self.x_feature - 1) / 2)
@@ -707,14 +742,27 @@ class VaeIRT(BaseIRT):
                 x_local, x_scale = self.encoder.forward(data_)
                 pyro.sample('x', dist.Normal(x_local, x_scale))
         else:
-            transform = LowerCholeskyTransform()
-            with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
-                data_ = data[idx]
-                data_nan = torch.isnan(data_)
-                if data_nan.any():
-                    data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
-                x_local, x_scale = self.encoder.forward(data_)
-                pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=transform(x_scale)))
+            if self.share_posterior_cov:
+                x_scale = pyro.param(
+                    'x_scale',
+                    torch.eye(self.x_feature),
+                    constraint=constraints.lower_cholesky
+                )
+                with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
+                    data_ = data[idx]
+                    data_nan = torch.isnan(data_)
+                    if data_nan.any():
+                        data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+                    x_local, _ = self.encoder.forward(data_)
+                    pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=x_scale))
+            else:
+                with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
+                    data_ = data[idx]
+                    data_nan = torch.isnan(data_)
+                    if data_nan.any():
+                        data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+                    x_local, x_scale = self.encoder.forward(data_)
+                    pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=x_scale))
 
 
 class VIRT(BaseIRT):
@@ -729,7 +777,7 @@ class VIRT(BaseIRT):
                 pyro.sample('x', dist.Normal(x_local[idx], x_scale[idx]))
         else:
             x_local = pyro.param('x_local', torch.zeros((sample_size, self.x_feature)))
-            if self.share_cov:
+            if self.share_posterior_cov:
                 x_scale_tril = pyro.param(
                     'x_scale',
                     torch.eye(self.x_feature),
@@ -750,8 +798,7 @@ class VIRT(BaseIRT):
 class BaseCDM(BasePsy):
 
     CDM_FUN = {
-        'dina': dina,
-        'dino': dino
+        'dina': dina
     }
 
     def __init__(self, q, model='dina', *args, **kwargs):
@@ -765,19 +812,6 @@ class BaseCDM(BasePsy):
         self.q = q
         self.attr_size = q.size(0)
         self._model = model
-
-    def model(self, data):
-        item_size = self.item_size
-        sample_size = self.sample_size
-        g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
-        s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
-        with pyro.plate("data", sample_size) as ind:
-            attr = pyro.sample(
-                'attr',
-                dist.Bernoulli(torch.ones((len(ind), self.attr_size)) + 0.5).to_event(1)
-            )
-            p = self.CDM_FUN[self._model](attr, self.q, g, s)
-            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data[ind])
 
     def fit(self, optim=Adam({'lr': 1e-3}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
         """

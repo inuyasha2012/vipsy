@@ -9,7 +9,7 @@ import pyro
 from pyro.infer import Trace_ELBO, TraceEnum_ELBO, HMC, NUTS, MCMC
 from pyro.optim import Adam, StepLR, MultiStepLR, PyroLRScheduler
 import torch
-from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomDino, RandomHoDina, \
+from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCDM, VaeCDM, VHoDina, VaeHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL, \
     RandomMissingIrt2PL, RandomMissingHoDina
 from pyro import distributions as dist
@@ -365,7 +365,7 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
@@ -522,16 +522,9 @@ class IrtMultiDimTestCase(TestCase, TestMixin, IRTRandomMixin):
         y = random_instance.y
         model = VaeIRT(data=y, model='irt_2pl', subsample_size=subsample_size, x_feature=x_feature,
                        hidden_dim=64)
-
-        def optim(_, param_name):
-            if param_name == 'a':
-                return {'lr': 1e-3}
-            if param_name == 'b':
-                return {'lr': 1e-3}
-            return {'lr': 1e-3}
-
-        model.fit(optim=Adam(optim), max_iter=int(sample_size / subsample_size * 1000), random_instance=random_instance,
+        model.fit(optim=Adam({"lr": 1e-3}), max_iter=int(sample_size / subsample_size * 1000), random_instance=random_instance,
                   loss=Trace_ELBO(num_particles=1))
+
 
 class Irt3PLTestCase(TestCase, TestMixin, IRTRandomMixin):
 
@@ -656,22 +649,6 @@ class DinaMissingTestCase(TestCase, TestMixin, CDMRandomMixin):
         if p_n in ('lam0', 'lam1'):
             return {'lr': 1e-1}
         return {'lr': 1e-3}
-
-
-class DinoTestCase(TestCase, TestMixin, CDMRandomMixin):
-
-    def setUp(self):
-        self.prepare_cuda()
-
-    def test_bbvi(self):
-        y, q, random_instance = self.gen_sample(RandomDino, 1000)
-        model = VCDM(data=y, q=q, model='dino', subsample_size=1000)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
-
-    def test_ai(self):
-        y, q, random_instance = self.gen_sample(RandomDino, 10000)
-        model = VaeCDM(data=y, q=q, model='dino', subsample_size=50)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))
 
 
 class HoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
@@ -818,14 +795,14 @@ class ArticleTest(TestCase):
             folder='dt'
         )
 
-    def test_2pl_bbvi_share_cov_try_10_item_50_sample_1000_dim_2(self):
+    def test_2pl_bbvi_share_posterior_cov_try_10_item_50_sample_1000_dim_2(self):
         multiprocess_article_test_load_data_util(
             model_name='2pl',
             x_feature_size=2,
             sample_size=1000,
             item_size=50,
             vi_class=VIRT,
-            vi_class_kwargs={'subsample_size': 1000, 'share_cov': True},
+            vi_class_kwargs={'subsample_size': 1000, 'share_posterior_cov': True},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 2000},
             start_idx=0,
             try_count=10,
@@ -863,14 +840,14 @@ class ArticleTest(TestCase):
             folder='dt'
         )
 
-    def test_2pl_bbvi_share_cov_try_10_item_50_sample_5000_dim_3(self):
+    def test_2pl_bbvi_share_posterior_cov_try_10_item_50_sample_5000_dim_3(self):
         multiprocess_article_test_load_data_util(
             model_name='2pl',
             x_feature_size=3,
             sample_size=5000,
             item_size=50,
             vi_class=VIRT,
-            vi_class_kwargs={'subsample_size': 5000, 'share_cov': True},
+            vi_class_kwargs={'subsample_size': 5000, 'share_posterior_cov': True},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 4000},
             start_idx=0,
             try_count=10,
@@ -1337,6 +1314,57 @@ class ArticleTest(TestCase):
             random_class_kwargs={'q_size': 5, 'missing_rate': 0.9},
             start_idx=0,
             try_count=4,
+            process_size=1,
+            folder='miss'
+        )
+
+    def test_ai_lsat(self):
+        y_ = np.loadtxt('lsat.dat')
+        y = torch.from_numpy(y_).float()
+        model = VaeIRT(data=y, model='irt_4pl', subsample_size=100, x_feature=1)
+        model.fit(optim=Adam({'lr': 1e-2}), max_iter=101)
+
+    def test_ai_pisa(self):
+        y_ = np.load('score_matrix.npy')
+        row_sum = y_.sum(1)
+        y_ = y_[row_sum != y_.shape[1]]
+        np.random.shuffle(y_)
+        y_[y_ == -1] = np.nan
+        y = torch.from_numpy(y_).float()
+        num_validation_samples = int(0.2 * y.size(0))
+        y_train = y[:-num_validation_samples]
+        y_val = y[-num_validation_samples:]
+        model = VaeIRT(data=y_train, model='irt_2pl', subsample_size=1000, x_feature=2, val_data=y_val,
+                       share_posterior_cov=True, prior_free=False)
+        model.fit(optim=Adam({'lr': 1e-3}), max_iter=5000000)
+
+    def test_ai_miss_try_10_item_100_sample_1000(self):
+        x_local = torch.zeros((2,))
+        x_cov = torch.eye(2)
+        x_cov[0, 1] = x_cov[1, 0] = 0.3
+        # x_cov[0, 2] = x_cov[2, 0] = 0.5
+        # x_cov[1, 2] = x_cov[2, 1] = 0.5
+        multiprocess_article_test_util(
+            # model_name='2pl',
+            # x_feature_size=2,
+            sample_size=1000,
+            item_size=50,
+            vi_class=VaeIRT,
+            vi_class_kwargs={
+                'subsample_size': 1000,
+                'share_posterior_cov': False,
+                'share_prior_cov': True,
+                'prior_free': True,
+            },
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={
+                'x_feature': 2,
+                'x_cov': x_cov,
+                'x_local': x_local,
+            },
+            start_idx=0,
+            try_count=5,
             process_size=1,
             folder='miss'
         )

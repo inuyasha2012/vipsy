@@ -130,7 +130,7 @@ test_irt <- function(base_path, try_count, method, technical = list(), GenRandom
   print(str_c('std_d:', sd(rmse$d)))
   return(rmse)
 }
-test_cdm <- function(base_path, try_count, method) {
+test_cdm <- function(base_path, try_count) {
   model_name <- str_split(base_path, '_', simplify = TRUE)[2]
   if (model_name == 'ho') {
     model_name <- 'ho-dina'
@@ -301,6 +301,6 @@ test_cdm <- function(base_path, try_count, method) {
 #print('dina, 100000样本')
 #res <- test_cdm("cdm/cdm_ho_dina_sample_10000_item_100", 4)
 print('irt, 缺失数据')
-res <- test_irt("miss/irt_2pl_sample_10000_item_500_dim_1", 4, 'EM',
+res <- test_irt("miss/irt_2pl_sample_1000_item_50_dim_2", 5, 'EM',
                 technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
                 GenRandomPars = FALSE, custom_pars = FALSE)
