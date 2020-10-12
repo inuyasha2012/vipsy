@@ -11,7 +11,7 @@ from pyro.optim import Adam, StepLR, MultiStepLR, PyroLRScheduler
 import torch
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCDM, VaeCDM, VHoDina, VaeHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL, \
-    RandomMissingIrt2PL, RandomMissingHoDina
+    RandomMissingIrt2PL, RandomMissingHoDina, JAVaeCDM, RandomLargeScaleDina
 from pyro import distributions as dist
 from multiprocessing import Pool
 
@@ -1231,8 +1231,24 @@ class ArticleTest(TestCase):
             random_class=RandomDina,
             random_class_kwargs={'q_size': 5},
             start_idx=0,
-            try_count=10,
+            try_count=1,
             process_size=1,
+            folder='cdm'
+        )
+
+    def test_ja_dina_ai_try_10_item_100_sample_1000(self):
+
+        multiprocess_article_test_util(
+            sample_size=2000,
+            item_size=100,
+            vi_class=JAVaeCDM,
+            vi_class_kwargs={'subsample_size': 1000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
+            random_class=RandomLargeScaleDina,
+            random_class_kwargs={'q_size': 25},
+            start_idx=0,
+            try_count=4,
+            process_size=2,
             folder='cdm'
         )
 

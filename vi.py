@@ -1,8 +1,6 @@
 import math
 import random
 from math import nan
-
-from pyro.distributions.transforms import neural_autoregressive, corr_cholesky_constraint, CorrLCholeskyTransform
 from sklearn.metrics import roc_auc_score
 
 import numpy as np
@@ -156,6 +154,46 @@ class RandomDina(RandomPsyData):
         self.attr = torch.FloatTensor(self.sample_size, q_size).bernoulli_(attr_p)
         self.g = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
         self.s = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
+
+    @property
+    def y(self):
+        p = dina(self.attr, self.q, self.g, self.s)
+        return torch.FloatTensor(*p.size()).bernoulli_(p)
+
+
+class RandomLargeScaleDina(RandomPsyData):
+    # 生成随机DINA模型数据
+    name = 'dina'
+
+    def __init__(self, q_size=5, corr=0.25, g_lower=0, g_upper=0.3, s_lower=0, s_upper=0.3, *args, **kwargs):
+        """
+        :param q_size: q矩阵的行数
+        :param q_p: q矩阵的二项分布概率
+        :param attr_p: 属性掌握的二项分布概率
+        :param args:
+        :param kwargs:
+        """
+        super().__init__(*args, **kwargs)
+        self.q_size = q_size
+        q_eye = torch.eye(q_size)
+        q1 = torch.eye(q_size)
+        q2 = torch.eye(q_size)
+        for i in range(q_size):
+            if i < q_size - 1:
+                q1[i, i + 1] = 1
+                q2[i, i + 1] = 1
+            if i > 0:
+                q2[i, i - 1] = 1
+        self.q = torch.cat([q_eye, q1, q2]).T
+        attr_mean = torch.zeros((q_size, ))
+        attr_cov = torch.ones((q_size, q_size)) * corr
+        attr_cov += torch.eye(q_size) * (1 - corr)
+        attr = dist.MultivariateNormal(attr_mean, covariance_matrix=attr_cov).sample((self.sample_size, ))
+        attr[attr > 0] = 1
+        attr[attr <= 0] = 0
+        self.attr = attr
+        self.g = torch.FloatTensor(1, self.q_size * 3).uniform_(g_lower, g_upper)
+        self.s = torch.FloatTensor(1, self.q_size * 3).uniform_(s_lower, s_upper)
 
     @property
     def y(self):
@@ -459,6 +497,21 @@ class MvnEncoder(nn.Module):
         x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
         return x_loc, self.transform(x_scale)
     
+
+class BinEncoder(nn.Module):
+
+    def __init__(self, item_size, x_dim, hidden_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(item_size, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, x_dim)
+        self.softplus = nn.Softplus()
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        hidden = self.softplus(self.fc1(x))
+        p = self.sigmoid(self.fc2(hidden))
+        return p
+
 
 class SoftmaxEncoder(nn.Module):
 
@@ -1002,4 +1055,84 @@ class VaeHoDina(VHoDina):
             pyro.sample(
                 'theta',
                 dist.Normal(theta_local, theta_scale).to_event(1)
+            )
+
+
+class JABaseCDM(BaseCDM):
+    # just another BaseCDM
+
+    def model(self, data):
+        item_size = self.item_size
+        sample_size = self.sample_size
+        g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
+        s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
+        with pyro.plate("data", sample_size) as idx:
+            attr = pyro.sample(
+                'attr',
+                dist.Bernoulli(torch.zeros((len(idx), self.attr_size)) + 0.5).to_event(1)
+            )
+            p = self.CDM_FUN[self._model](attr, self.q, g, s)
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, 0), data_)
+                p = torch.where(data_nan, torch.full_like(p, 0), p)
+            pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
+
+    def fit(self, optim=Adam({'lr': 1e-3}), loss=Trace_ELBO(num_particles=1), max_iter=5000, random_instance=None):
+        svi = SVI(self.model, self.guide, optim=optim, loss=loss)
+        with trange(max_iter) as t:
+            for i in t:
+                t.set_description(f'迭代：{i}')
+                svi.step(self.data)
+                loss = svi.evaluate_loss(self.data)
+                with torch.no_grad():
+                    postfix_kwargs = {}
+                    if random_instance is not None:
+                        attr_p = self.encoder.forward(self.data)
+                        attr_p[attr_p > 0.5] = 1
+                        attr_p[attr_p <= 0.5] = 0
+                        ac = attr_p - random_instance.attr
+                        a_a = len(ac[ac == 0]) / (attr_p.size(0) * attr_p.size(1))
+                        # attr_p = pyro.param('attr_p')
+                        g = pyro.param('g')
+                        s = pyro.param('s')
+                        postfix_kwargs.update({
+                            'g': '{0}'.format((g - random_instance.g).pow(2).sqrt().mean()),
+                            's': '{0}'.format((s - random_instance.s).pow(2).sqrt().mean()),
+                            'attr_p': '{0}'.format(a_a)
+                        })
+                    t.set_postfix(loss=loss, **postfix_kwargs)
+
+
+class JAVaeCDM(JABaseCDM):
+    # # just another 基于变分自编码器的CDM参数估计
+    def __init__(self, hidden_dim=64, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.encoder = BinEncoder(self.item_size, self.attr_size, hidden_dim)
+
+    def guide(self, data):
+        sample_size = self.sample_size
+        pyro.module('encoder', self.encoder)
+        with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
+            data_ = data[idx]
+            data_nan = torch.isnan(data_)
+            if data_nan.any():
+                data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+            attr_p = self.encoder.forward(data_)
+            pyro.sample(
+                'attr',
+                dist.Bernoulli(attr_p).to_event(1)
+            )
+
+
+class JAVCDM(BaseCDM):
+    # just another 基于黑盒变分推断的CDM参数估计
+    def guide(self, data):
+        sample_size = self.sample_size
+        attr_p = pyro.param('attr_p', torch.zeros((sample_size, self.attr_size)) + 0.5, constraint=constraints.unit_interval)
+        with pyro.plate("data", sample_size, subsample_size=self.subsample_size) as idx:
+            pyro.sample(
+                'attr',
+                dist.Bernoulli(attr_p[idx]).to_event(1)
             )
