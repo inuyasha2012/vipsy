@@ -11,7 +11,7 @@ from pyro.optim import Adam, StepLR, MultiStepLR, PyroLRScheduler
 import torch
 from vi import RandomIrt1PL, RandomIrt2PL, RandomIrt3PL, RandomIrt4PL, RandomDina, RandomHoDina, \
     VaeIRT, VIRT, VCDM, VaeCDM, VCDM, VaeCDM, VHoDina, VaeHoDina, RandomMilIrt2PL, RandomMilIrt3PL, RandomMilIrt4PL, \
-    RandomMissingIrt2PL, RandomMissingHoDina, JAVaeCDM, RandomLargeScaleDina
+    RandomMissingIrt2PL, RandomMissingHoDina, JAVaeCDM, RandomLargeScaleDina, JAVCDM
 from pyro import distributions as dist
 from multiprocessing import Pool
 
@@ -365,8 +365,8 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
-        model = VaeIRT(data=y, model='irt_2pl', subsample_size=100)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=10000)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
 
@@ -1242,13 +1242,13 @@ class ArticleTest(TestCase):
             sample_size=2000,
             item_size=100,
             vi_class=JAVaeCDM,
-            vi_class_kwargs={'subsample_size': 1000},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 100000},
-            random_class=RandomLargeScaleDina,
-            random_class_kwargs={'q_size': 25},
+            vi_class_kwargs={'subsample_size': 2000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 1000000},
+            random_class=RandomDina,
+            random_class_kwargs={'q_size': 3},
             start_idx=0,
-            try_count=4,
-            process_size=2,
+            try_count=1,
+            process_size=1,
             folder='cdm'
         )
 

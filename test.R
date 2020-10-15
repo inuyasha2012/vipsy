@@ -298,9 +298,9 @@ test_cdm <- function(base_path, try_count) {
 ##res <- test_irt("mil/irt_4pl_sample_5000_item_50_dim_5", 10, 'MHRM',
 ##                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 ##                GenRandomPars = FALSE, custom_pars = TRUE)
-#print('dina, 100000样本')
-#res <- test_cdm("cdm/cdm_ho_dina_sample_10000_item_100", 4)
-print('irt, 缺失数据')
-res <- test_irt("miss/irt_2pl_sample_1000_item_50_dim_2", 5, 'EM',
-                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
-                GenRandomPars = FALSE, custom_pars = FALSE)
+print('dina')
+res <- test_cdm("cdm/cdm_dina_sample_2000_item_100", 1)
+#print('irt, 缺失数据')
+#res <- test_irt("miss/irt_2pl_sample_1000_item_50_dim_2", 1, 'EM',
+#                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
+#                GenRandomPars = FALSE, custom_pars = FALSE)

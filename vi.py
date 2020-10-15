@@ -1090,11 +1090,11 @@ class JABaseCDM(BaseCDM):
                     postfix_kwargs = {}
                     if random_instance is not None:
                         attr_p = self.encoder.forward(self.data)
+                        # attr_p = pyro.param('attr_p')
                         attr_p[attr_p > 0.5] = 1
                         attr_p[attr_p <= 0.5] = 0
                         ac = attr_p - random_instance.attr
                         a_a = len(ac[ac == 0]) / (attr_p.size(0) * attr_p.size(1))
-                        # attr_p = pyro.param('attr_p')
                         g = pyro.param('g')
                         s = pyro.param('s')
                         postfix_kwargs.update({
@@ -1126,7 +1126,7 @@ class JAVaeCDM(JABaseCDM):
             )
 
 
-class JAVCDM(BaseCDM):
+class JAVCDM(JABaseCDM):
     # just another 基于黑盒变分推断的CDM参数估计
     def guide(self, data):
         sample_size = self.sample_size
