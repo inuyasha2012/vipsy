@@ -1288,14 +1288,16 @@ class ArticleTest(TestCase):
 
     def test_ho_dina_ai_try_10_item_100_sample_10000(self):
 
-        multiprocess_article_test_util(
+        multiprocess_article_test_load_data_util(
+            model_name='ho_dina',
+            x_feature_size=0,
             sample_size=10000,
             item_size=100,
             vi_class=VaeHoDina,
             vi_class_kwargs={'subsample_size': 500},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 500},
-            random_class=RandomHoDina,
-            random_class_kwargs={'q_size': 5},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-4}), 'max_iter': 100000},
+            # random_class=RandomHoDina,
+            # random_class_kwargs={'q_size': 5},
             start_idx=0,
             try_count=4,
             process_size=1,
@@ -1307,7 +1309,7 @@ class ArticleTest(TestCase):
         multiprocess_article_test_load_data_util(
             model_name='ho_dina',
             x_feature_size=0,
-            sample_size=1000,
+            sample_size=10000,
             item_size=100,
             vi_class=VHoDina,
             vi_class_kwargs={'subsample_size': 1000},
@@ -1357,22 +1359,20 @@ class ArticleTest(TestCase):
     def test_ai_miss_try_10_item_100_sample_1000(self):
         x_local = torch.zeros((2,))
         x_cov = torch.eye(2)
-        x_cov[0, 1] = x_cov[1, 0] = 0.3
-        # x_cov[0, 2] = x_cov[2, 0] = 0.5
-        # x_cov[1, 2] = x_cov[2, 1] = 0.5
+        # x_cov[0, 1] = x_cov[1, 0] = 0.7
         multiprocess_article_test_util(
             # model_name='2pl',
             # x_feature_size=2,
-            sample_size=1000,
+            sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={
                 'subsample_size': 1000,
                 'share_posterior_cov': False,
-                'share_prior_cov': True,
-                'prior_free': True,
+                'share_prior_cov': False,
+                'prior_free': False,
             },
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
             random_class=RandomIrt2PL,
             random_class_kwargs={
                 'x_feature': 2,
@@ -1380,7 +1380,7 @@ class ArticleTest(TestCase):
                 'x_local': x_local,
             },
             start_idx=0,
-            try_count=5,
-            process_size=1,
+            try_count=4,
+            process_size=2,
             folder='miss'
         )

@@ -1,6 +1,8 @@
 import math
 import random
 from math import nan
+
+from pyro.distributions.transforms import CorrLCholeskyTransform
 from sklearn.metrics import roc_auc_score
 
 import numpy as np
@@ -488,15 +490,41 @@ class MvnEncoder(nn.Module):
         self.softplus = nn.Softplus()
         self.transform = LowerCholeskyTransform()
 
+    # def forward(self, x):
+    #     hidden = self.softplus(self.fc1(x))
+    #     x_loc = self.fc21(hidden)
+    #     x_scale_ = self.fc22(hidden)
+    #     x_scale = torch.zeros(x_scale_.shape[:-1] + (self.x_dim, self.x_dim))
+    #     idx = torch.tril_indices(self.x_dim, self.x_dim)
+    #     x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
+    #     return x_loc, self.transform(x_scale)
+
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
         x_scale_ = self.fc22(hidden)
-        x_scale = torch.zeros(x_scale_.shape[:-1] + (self.x_dim, self.x_dim))
+        x_scale = torch.zeros((self.x_dim, self.x_dim))
         idx = torch.tril_indices(self.x_dim, self.x_dim)
-        x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
+        x_scale[idx[0], idx[1]] = x_scale_.mean(0)
+        # x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
         return x_loc, self.transform(x_scale)
-    
+
+
+class PriorScaleEncoder(nn.Module):
+
+    def __init__(self, item_size, x_dim, hidden_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(item_size, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, int(x_dim * (x_dim - 1) / 2))
+        self.x_dim = x_dim
+        self.softplus = nn.Softplus()
+        self.transform = CorrLCholeskyTransform()
+
+    def forward(self, x):
+        hidden = self.softplus(self.fc1(x))
+        x_scale_ = self.fc2(hidden)
+        return self.transform(x_scale_.mean(0))
+
 
 class BinEncoder(nn.Module):
 
@@ -618,7 +646,10 @@ class BaseIRT(BasePsy):
                 self.a_free[i, self.item_size - i:] = False
                 self.a0[i, self.item_size - i:] = 0
 
+        self.prior_encoder = PriorScaleEncoder(self.item_size, self.x_feature, 64)
+
     def model(self, data):
+        pyro.module('prior_encoder', self.prior_encoder)
         item_size = self.item_size
         sample_size = self.sample_size
         b0 = self.kwargs.get('b0', torch.zeros((1, self.item_size)))
@@ -644,34 +675,36 @@ class BaseIRT(BasePsy):
             x_cov0 = torch.eye(self.x_feature)
             if self.share_prior_cov:
                 if self.prior_free:
-                    x_cov = pyro.param('x_cov', x_cov0, constraint=constraints.corr_cholesky_constraint)
+                    x_cov = pyro.param('x_cov0', x_cov0, constraint=constraints.corr_cholesky_constraint)
                 else:
                     x_cov = x_cov0
+                    x_cov[0, 1] = x_cov[1, 0] = 0.7
                 with pyro.plate("data", sample_size) as idx:
                     irt_param_kwargs['x'] = pyro.sample(
                         'x',
                         dist.MultivariateNormal(
                             torch.zeros((len(idx), self.x_feature)),
-                            scale_tril=x_cov
+                            covariance_matrix=x_cov
                         )
                     )
                     p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
                     pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
             else:
-                if self.prior_free:
-                    x_cov = pyro.param(
-                        'x_cov',
-                        x_cov0.repeat(sample_size, 1, 1),
-                        constraint=constraints.corr_cholesky_constraint
-                    )
-                else:
-                    x_cov = x_cov0.repeat(sample_size, 1, 1)
+                # if self.prior_free:
+                #     x_cov = pyro.param(
+                #         'x_cov',
+                #         x_cov0.repeat(sample_size, 1, 1),
+                #         constraint=constraints.corr_cholesky_constraint
+                #     )
+                # else:
+                #     x_cov = x_cov0.repeat(sample_size, 1, 1)
                 with pyro.plate("data", sample_size) as idx:
+                    x_cov = self.prior_encoder(self.data)
                     irt_param_kwargs['x'] = pyro.sample(
                         'x',
                         dist.MultivariateNormal(
                             torch.zeros((len(idx), self.x_feature)),
-                            scale_tril=x_cov[idx]
+                            scale_tril=x_cov
                         )
                     )
                     p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
@@ -755,6 +788,10 @@ class BaseIRT(BasePsy):
                         # x, _ = self.encoder.forward(self.data)
                         # x = pyro.param('x_local')
                         # postfix_kwargs['x_error'] = '{0}'.format((x - random_instance.x).pow(2).sqrt().mean())
+                        # x_cov0 = pyro.param('x_cov0')
+                        # x_cov = torch.eye(2)
+                        # x_cov[0, 1] = x_cov[1, 0] = 0.7
+                        # postfix_kwargs['x_cov0'] = '{0}'.format((x_cov0.mm(x_cov0.T) - x_cov).pow(2).sqrt().sum() / 2)
                         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
                             a = pyro.param('a')
                             a_error = (a - random_instance.a).pow(2).sqrt().sum() / (self.x_feature * self.item_size - self.x_feature * (self.x_feature - 1) / 2)
@@ -1089,8 +1126,12 @@ class JABaseCDM(BaseCDM):
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
-                        attr_p = self.encoder.forward(self.data)
+                        # attr_p = self.encoder.forward(self.data)
                         # attr_p = pyro.param('attr_p')
+                        x, _ = self.encoder.forward(self.data)
+                        lam0 = pyro.param('lam0')
+                        lam1 = pyro.param('lam1')
+                        attr_p = torch.sigmoid(x.mm(lam1) + lam0)
                         attr_p[attr_p > 0.5] = 1
                         attr_p[attr_p <= 0.5] = 0
                         ac = attr_p - random_instance.attr
