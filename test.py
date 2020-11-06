@@ -666,7 +666,7 @@ class HoDinaTestCase(TestCase, TestMixin, CDMRandomMixin):
         y, q, random_instance = self.gen_sample(RandomHoDina, sample_size)
         subsample_size = 100
         model = VaeHoDina(data=y, q=q, subsample_size=subsample_size)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-3}))
 
 
 class ArticleTest(TestCase):
@@ -1015,8 +1015,13 @@ class ArticleTest(TestCase):
             sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
-            vi_class_kwargs={'subsample_size': 500},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
+            vi_class_kwargs={
+                'subsample_size': 1000,
+                'share_posterior_cov': False,
+                'share_prior_cov': True,
+                'prior_free': False,
+            },
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 50000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 5},
             start_idx=0,
@@ -1101,7 +1106,7 @@ class ArticleTest(TestCase):
             vi_class_kwargs={'subsample_size': 100},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 5000},
             random_class=RandomMilIrt4PL,
-            random_class_kwargs={'x_featu re': 5},
+            random_class_kwargs={'x_feature': 5},
             start_idx=0,
             try_count=10,
             process_size=2,
@@ -1359,10 +1364,10 @@ class ArticleTest(TestCase):
     def test_ai_miss_try_10_item_100_sample_1000(self):
         x_local = torch.zeros((2,))
         x_cov = torch.eye(2)
-        # x_cov[0, 1] = x_cov[1, 0] = 0.7
-        multiprocess_article_test_util(
-            # model_name='2pl',
-            # x_feature_size=2,
+        x_cov[0, 1] = x_cov[1, 0] = 0.7
+        multiprocess_article_test_load_data_util(
+            model_name='2pl',
+            x_feature_size=2,
             sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
@@ -1373,14 +1378,14 @@ class ArticleTest(TestCase):
                 'prior_free': False,
             },
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-            random_class=RandomIrt2PL,
-            random_class_kwargs={
-                'x_feature': 2,
-                'x_cov': x_cov,
-                'x_local': x_local,
-            },
+            # random_class=RandomIrt2PL,
+            # random_class_kwargs={
+            #     'x_feature': 2,
+            #     'x_cov': x_cov,
+            #     'x_local': x_local,
+            # },
             start_idx=0,
-            try_count=4,
+            try_count=10,
             process_size=2,
             folder='miss'
         )

@@ -646,7 +646,8 @@ class BaseIRT(BasePsy):
                 self.a_free[i, self.item_size - i:] = False
                 self.a0[i, self.item_size - i:] = 0
 
-        self.prior_encoder = PriorScaleEncoder(self.item_size, self.x_feature, 64)
+    def get_prior_cov(self):
+        raise NotImplementedError
 
     def model(self, data):
         pyro.module('prior_encoder', self.prior_encoder)
@@ -678,7 +679,6 @@ class BaseIRT(BasePsy):
                     x_cov = pyro.param('x_cov0', x_cov0, constraint=constraints.corr_cholesky_constraint)
                 else:
                     x_cov = x_cov0
-                    x_cov[0, 1] = x_cov[1, 0] = 0.7
                 with pyro.plate("data", sample_size) as idx:
                     irt_param_kwargs['x'] = pyro.sample(
                         'x',
@@ -806,6 +806,7 @@ class BaseIRT(BasePsy):
 
 
 class VaeIRT(BaseIRT):
+
     # 基于变分自编码器的IRT参数估计
     def __init__(self, hidden_dim=64, *args, **kwargs):
         """
@@ -818,6 +819,7 @@ class VaeIRT(BaseIRT):
             self.encoder = NormEncoder(self.item_size, self.x_feature, hidden_dim)
         else:
             self.encoder = MvnEncoder(self.item_size, self.x_feature, hidden_dim)
+            self.prior_encoder = PriorScaleEncoder(self.item_size, self.x_feature, 64)
 
     def guide(self, data):
         sample_size = self.sample_size
