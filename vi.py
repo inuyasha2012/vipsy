@@ -481,7 +481,7 @@ class NormEncoder(nn.Module):
 
 class MvnEncoder(nn.Module):
 
-    def __init__(self, item_size, x_dim, hidden_dim):
+    def __init__(self, item_size, x_dim, hidden_dim, share_cov=False):
         super().__init__()
         self.fc1 = nn.Linear(item_size, hidden_dim)
         self.fc21 = nn.Linear(hidden_dim, x_dim)
@@ -489,24 +489,19 @@ class MvnEncoder(nn.Module):
         self.x_dim = x_dim
         self.softplus = nn.Softplus()
         self.transform = LowerCholeskyTransform()
-
-    # def forward(self, x):
-    #     hidden = self.softplus(self.fc1(x))
-    #     x_loc = self.fc21(hidden)
-    #     x_scale_ = self.fc22(hidden)
-    #     x_scale = torch.zeros(x_scale_.shape[:-1] + (self.x_dim, self.x_dim))
-    #     idx = torch.tril_indices(self.x_dim, self.x_dim)
-    #     x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
-    #     return x_loc, self.transform(x_scale)
+        self.share_cov = share_cov
 
     def forward(self, x):
         hidden = self.softplus(self.fc1(x))
         x_loc = self.fc21(hidden)
         x_scale_ = self.fc22(hidden)
-        x_scale = torch.zeros((self.x_dim, self.x_dim))
         idx = torch.tril_indices(self.x_dim, self.x_dim)
-        x_scale[idx[0], idx[1]] = x_scale_.mean(0)
-        # x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
+        if self.share_cov:
+            x_scale = torch.zeros((self.x_dim, self.x_dim))
+            x_scale[idx[0], idx[1]] = x_scale_.mean(0)
+        else:
+            x_scale = torch.zeros(x_scale_.shape[:-1] + (self.x_dim, self.x_dim))
+            x_scale[..., idx[0], idx[1]] = x_scale_[..., :]
         return x_loc, self.transform(x_scale)
 
 
@@ -618,6 +613,7 @@ class BaseIRT(BasePsy):
                  x_feature=1,
                  share_posterior_cov=False,
                  share_prior_cov=False,
+                 neural_prior_cov=False,
                  D=1,
                  prior_free=False,
                  *args,
@@ -636,6 +632,7 @@ class BaseIRT(BasePsy):
         self.x_feature = x_feature
         self.share_posterior_cov = share_posterior_cov
         self.share_prior_cov = share_prior_cov
+        self.neural_prior_cov = neural_prior_cov
         self.D = D
         self.prior_free = prior_free
         self.a_free = kwargs.get('a_free')
@@ -676,39 +673,33 @@ class BaseIRT(BasePsy):
             x_cov0 = torch.eye(self.x_feature)
             if self.share_prior_cov:
                 if self.prior_free:
-                    x_cov = pyro.param('x_cov0', x_cov0, constraint=constraints.corr_cholesky_constraint)
+                    if not self.neural_prior_cov:
+                        x_cov = pyro.param('x_cov0', x_cov0, constraint=constraints.corr_cholesky_constraint)
                 else:
                     x_cov = x_cov0
-                with pyro.plate("data", sample_size) as idx:
-                    irt_param_kwargs['x'] = pyro.sample(
-                        'x',
-                        dist.MultivariateNormal(
-                            torch.zeros((len(idx), self.x_feature)),
-                            covariance_matrix=x_cov
-                        )
-                    )
-                    p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
-                    pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
             else:
-                # if self.prior_free:
-                #     x_cov = pyro.param(
-                #         'x_cov',
-                #         x_cov0.repeat(sample_size, 1, 1),
-                #         constraint=constraints.corr_cholesky_constraint
-                #     )
-                # else:
-                #     x_cov = x_cov0.repeat(sample_size, 1, 1)
-                with pyro.plate("data", sample_size) as idx:
-                    x_cov = self.prior_encoder(self.data)
-                    irt_param_kwargs['x'] = pyro.sample(
-                        'x',
-                        dist.MultivariateNormal(
-                            torch.zeros((len(idx), self.x_feature)),
-                            scale_tril=x_cov
-                        )
+                if self.prior_free:
+                    x_cov_ = pyro.param(
+                        'x_cov',
+                        x_cov0.repeat(sample_size, 1, 1),
+                        constraint=constraints.corr_cholesky_constraint
                     )
-                    p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
-                    pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
+                else:
+                    x_cov_ = x_cov0.repeat(sample_size, 1, 1)
+            with pyro.plate("data", sample_size) as idx:
+                if self.share_prior_cov and self.neural_prior_cov:
+                    x_cov = self.prior_encoder(self.data[idx])
+                if not self.share_prior_cov:
+                    x_cov = x_cov_[idx]
+                irt_param_kwargs['x'] = pyro.sample(
+                    'x',
+                    dist.MultivariateNormal(
+                        torch.zeros((len(idx), self.x_feature)),
+                        scale_tril=x_cov
+                    )
+                )
+                p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
+                pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
     def _get_p_data(self, data, idx, irt_param_kwargs):
         irt_fun = self.IRT_FUN[self._model]
@@ -808,7 +799,7 @@ class BaseIRT(BasePsy):
 class VaeIRT(BaseIRT):
 
     # 基于变分自编码器的IRT参数估计
-    def __init__(self, hidden_dim=64, *args, **kwargs):
+    def __init__(self, hidden_dim=64, neural_share_posterior_cov=False, *args, **kwargs):
         """
         :param hidden_dim: 隐藏层维度数
         :param args:
@@ -818,8 +809,9 @@ class VaeIRT(BaseIRT):
         if self.x_feature == 1:
             self.encoder = NormEncoder(self.item_size, self.x_feature, hidden_dim)
         else:
-            self.encoder = MvnEncoder(self.item_size, self.x_feature, hidden_dim)
+            self.encoder = MvnEncoder(self.item_size, self.x_feature, hidden_dim, self.share_posterior_cov)
             self.prior_encoder = PriorScaleEncoder(self.item_size, self.x_feature, 64)
+            self.neural_share_posterior_cov = neural_share_posterior_cov
 
     def guide(self, data):
         sample_size = self.sample_size
@@ -834,7 +826,7 @@ class VaeIRT(BaseIRT):
                 x_local, x_scale = self.encoder.forward(data_)
                 pyro.sample('x', dist.Normal(x_local, x_scale))
         else:
-            if self.share_posterior_cov:
+            if not self.neural_share_posterior_cov:
                 x_scale = pyro.param(
                     'x_scale',
                     torch.eye(self.x_feature),

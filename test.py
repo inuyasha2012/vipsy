@@ -1373,9 +1373,11 @@ class ArticleTest(TestCase):
             vi_class=VaeIRT,
             vi_class_kwargs={
                 'subsample_size': 1000,
-                'share_posterior_cov': False,
-                'share_prior_cov': False,
-                'prior_free': False,
+                'share_posterior_cov': True,
+                'share_prior_cov': True,
+                'prior_free': True,
+                'neural_share_posterior_cov': True,
+                'neural_prior_cov': False
             },
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
             # random_class=RandomIrt2PL,
@@ -1385,7 +1387,7 @@ class ArticleTest(TestCase):
             #     'x_local': x_local,
             # },
             start_idx=0,
-            try_count=10,
+            try_count=4,
             process_size=2,
             folder='miss'
         )
