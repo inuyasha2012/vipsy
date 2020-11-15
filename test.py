@@ -593,8 +593,8 @@ class DinaTestCase(TestCase, TestMixin, CDMRandomMixin):
 
     def test_bbvi(self):
         y, q, random_instance = self.gen_sample(RandomDina, 1500)
-        model = VCDM(data=y, q=q, model='dina', subsample_size=1500)
-        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}))
+        model = JAVCDM(data=y, q=q, model='dina', subsample_size=1500)
+        model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=20000)
 
     def test_ai(self):
         y, q, random_instance = self.gen_sample(RandomDina, 1000, q_size=5)
@@ -1293,16 +1293,16 @@ class ArticleTest(TestCase):
 
     def test_ho_dina_ai_try_10_item_100_sample_10000(self):
 
-        multiprocess_article_test_load_data_util(
-            model_name='ho_dina',
-            x_feature_size=0,
+        multiprocess_article_test_util(
+            # model_name='ho_dina',
+            # x_feature_size=0,
             sample_size=10000,
             item_size=100,
             vi_class=VaeHoDina,
-            vi_class_kwargs={'subsample_size': 500},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-4}), 'max_iter': 100000},
-            # random_class=RandomHoDina,
-            # random_class_kwargs={'q_size': 5},
+            vi_class_kwargs={'subsample_size': 100, 'theta_feature': 2},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            random_class=RandomHoDina,
+            random_class_kwargs={'q_size': 5, 'theta_feature': 2},
             start_idx=0,
             try_count=4,
             process_size=1,
@@ -1343,49 +1343,74 @@ class ArticleTest(TestCase):
 
     def test_ai_lsat(self):
         y_ = np.loadtxt('lsat.dat')
+        np.random.shuffle(y_)
         y = torch.from_numpy(y_).float()
-        model = VaeIRT(data=y, model='irt_4pl', subsample_size=100, x_feature=1)
-        model.fit(optim=Adam({'lr': 1e-2}), max_iter=101)
+        num_validation_samples = int(0.2 * y.size(0))
+        y_train = y[:-num_validation_samples]
+        y_val = y[-num_validation_samples:]
+        model = VaeIRT(
+            data=y_train,
+            model='irt_3pl',
+            subsample_size=400,
+            x_feature=10,
+            val_data=y_val,
+            share_posterior_cov=False,
+            prior_free=True,
+            share_prior_cov=True,
+            neural_prior_cov=False,
+            neural_share_posterior_cov=False
+        )
+        model.fit(optim=Adam({'lr': 1e-3}), max_iter=100000)
 
     def test_ai_pisa(self):
         y_ = np.load('score_matrix.npy')
         row_sum = y_.sum(1)
-        y_ = y_[row_sum != y_.shape[1]]
+        y_ = y_[row_sum != -y_.shape[1]]
         np.random.shuffle(y_)
         y_[y_ == -1] = np.nan
         y = torch.from_numpy(y_).float()
         num_validation_samples = int(0.2 * y.size(0))
         y_train = y[:-num_validation_samples]
         y_val = y[-num_validation_samples:]
-        model = VaeIRT(data=y_train, model='irt_2pl', subsample_size=1000, x_feature=2, val_data=y_val,
-                       share_posterior_cov=True, prior_free=False)
-        model.fit(optim=Adam({'lr': 1e-3}), max_iter=5000000)
+        model = VaeIRT(
+            data=y_train,
+            model='irt_2pl',
+            subsample_size=100,
+            x_feature=5,
+            val_data=y_val,
+            share_posterior_cov=True,
+            prior_free=True,
+            share_prior_cov=True,
+            neural_prior_cov=False,
+            neural_share_posterior_cov=False
+        )
+        model.fit(optim=Adam({'lr': 1e-3}), max_iter=500000000)
 
     def test_ai_miss_try_10_item_100_sample_1000(self):
         x_local = torch.zeros((2,))
         x_cov = torch.eye(2)
         x_cov[0, 1] = x_cov[1, 0] = 0.7
-        multiprocess_article_test_load_data_util(
-            model_name='2pl',
-            x_feature_size=2,
-            sample_size=10000,
+        multiprocess_article_test_util(
+            # model_name='2pl',
+            # x_feature_size=2,
+            sample_size=1000,
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={
-                'subsample_size': 1000,
+                'subsample_size': 500,
                 'share_posterior_cov': True,
                 'share_prior_cov': True,
                 'prior_free': True,
-                'neural_share_posterior_cov': True,
-                'neural_prior_cov': False
+                'neural_share_posterior_cov': False,
+                'neural_prior_cov': True
             },
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
-            # random_class=RandomIrt2PL,
-            # random_class_kwargs={
-            #     'x_feature': 2,
-            #     'x_cov': x_cov,
-            #     'x_local': x_local,
-            # },
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            random_class=RandomIrt2PL,
+            random_class_kwargs={
+                'x_feature': 2,
+                'x_cov': x_cov,
+                'x_local': x_local,
+            },
             start_idx=0,
             try_count=4,
             process_size=2,

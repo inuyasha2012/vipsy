@@ -208,7 +208,7 @@ class RandomHoDina(RandomDina):
     name = 'ho_dina'
 
     def __init__(self, theta_local=0, theta_scale=1, lam0_local=0, lam0_scale=1, lam1_lower=0.5,
-                 lam1_upper=3, *args, **kwargs):
+                 lam1_upper=3, theta_feature=1,*args, **kwargs):
         """
         :param theta_dim: 潜变量维度
         :param theta_local: 潜变量正态分布的均值
@@ -221,9 +221,11 @@ class RandomHoDina(RandomDina):
         :param kwargs:
         """
         super().__init__(*args, **kwargs)
-        self.theta = torch.FloatTensor(self.sample_size, 1).normal_(theta_local, theta_scale)
+        self.theta = torch.FloatTensor(self.sample_size, theta_feature).normal_(theta_local, theta_scale)
         self.lam0 = torch.FloatTensor(1, self.q_size).normal_(lam0_local, lam0_scale)
-        self.lam1 = torch.FloatTensor(1, self.q_size).uniform_(lam1_lower, lam1_upper)
+        self.lam1 = torch.FloatTensor(theta_feature, self.q_size).uniform_(lam1_lower, lam1_upper)
+        for i in range(theta_feature):
+            self.lam1[i, self.q_size - i:] = 0
 
     @property
     def y(self):
@@ -647,7 +649,6 @@ class BaseIRT(BasePsy):
         raise NotImplementedError
 
     def model(self, data):
-        pyro.module('prior_encoder', self.prior_encoder)
         item_size = self.item_size
         sample_size = self.sample_size
         b0 = self.kwargs.get('b0', torch.zeros((1, self.item_size)))
@@ -675,6 +676,8 @@ class BaseIRT(BasePsy):
                 if self.prior_free:
                     if not self.neural_prior_cov:
                         x_cov = pyro.param('x_cov0', x_cov0, constraint=constraints.corr_cholesky_constraint)
+                    else:
+                        pyro.module('prior_encoder', self.prior_encoder)
                 else:
                     x_cov = x_cov0
             else:
@@ -719,7 +722,7 @@ class BaseIRT(BasePsy):
             num_posterior_samples = 1
             a = pyro.param('a')
             b = pyro.param('b')
-            x_local, x_scale = self.encoder.forward(data)
+            x_local, _ = self.encoder.forward(data)
             # if self.x_feature == 1:
             #     x = dist.Normal(x_local, x_scale).sample((num_posterior_samples,))
             # else:
@@ -757,20 +760,20 @@ class BaseIRT(BasePsy):
         :param random_instance: 随机数据生成实例
         """
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
-        with trange(max_iter) as t:
+        with trange(max_iter, disable=True) as t:
             for i in t:
                 t.set_description(f'迭代：{i}')
                 loss = svi.step(self.data)
                 if isinstance(optim, PyroLRScheduler):
                     optim.step()
-                # if i % 3500 == 0:
-                #     # marginal = self.test().item()
-                #     # print(marginal)
-                #     val_data = self.kwargs.get('val_data', self.data)
-                #     roc_auc = self.get_roc_auc(val_data)
-                #     print(roc_auc)
-                #     # roc_auc1 = self.get_roc_auc(self.data)
-                #     # print(roc_auc1)
+                if i % 3500 == 0:
+                    # marginal = self.test().item()
+                    # print(marginal)
+                    val_data = self.kwargs.get('val_data', self.data)
+                    roc_auc = self.get_roc_auc(val_data)
+                    print(roc_auc)
+                    roc_auc1 = self.get_roc_auc(self.data)
+                    print(roc_auc1)
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
@@ -793,7 +796,7 @@ class BaseIRT(BasePsy):
                         if self._model == 'irt_4pl':
                             d = pyro.param('d')
                             postfix_kwargs['slip_error'] = '{0}'.format((d - random_instance.d).pow(2).sqrt().mean())
-                    t.set_postfix(loss='{0:1.2f}'.format(loss), **postfix_kwargs)
+                    # t.set_postfix(loss='{0:1.2f}'.format(loss), **postfix_kwargs)
 
 
 class VaeIRT(BaseIRT):
@@ -826,27 +829,23 @@ class VaeIRT(BaseIRT):
                 x_local, x_scale = self.encoder.forward(data_)
                 pyro.sample('x', dist.Normal(x_local, x_scale))
         else:
-            if not self.neural_share_posterior_cov:
+            if self.share_posterior_cov and not self.neural_share_posterior_cov:
                 x_scale = pyro.param(
                     'x_scale',
                     torch.eye(self.x_feature),
                     constraint=constraints.lower_cholesky
                 )
-                with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
-                    data_ = data[idx]
-                    data_nan = torch.isnan(data_)
-                    if data_nan.any():
-                        data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+            with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
+                data_ = data[idx]
+                data_nan = torch.isnan(data_)
+                if data_nan.any():
+                    data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+                if self.share_posterior_cov and not self.neural_share_posterior_cov:
                     x_local, _ = self.encoder.forward(data_)
-                    pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=x_scale))
-            else:
-                with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
-                    data_ = data[idx]
-                    data_nan = torch.isnan(data_)
-                    if data_nan.any():
-                        data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
+                else:
                     x_local, x_scale = self.encoder.forward(data_)
-                    pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=x_scale))
+                pyro.sample('x', dist.MultivariateNormal(x_local, scale_tril=x_scale))
+
 
 
 class VIRT(BaseIRT):
@@ -1001,21 +1000,39 @@ class VaeCDM(VCDM):
 
 class VHoDina(VCDM):
     # 基于离散潜变量黑盒变分推断的HO-DINA参数估计，效果绝佳
+    def __init__(self, theta_feature=1, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.theta_feature = theta_feature
+        self.lam1_init = torch.ones((theta_feature, self.attr_size))
+        self.lam1_free = torch.BoolTensor(theta_feature, self.attr_size).fill_(True)
+        for i in range(theta_feature):
+            self.lam1_free[i, self.attr_size - i:] = False
+            self.lam1_init[i, self.attr_size - i:] = 0
 
     @config_enumerate
     def model(self, data):
         item_size = self.item_size
         sample_size = self.sample_size
         lam0 = pyro.param('lam0', torch.zeros((1, self.attr_size)))
-        lam1 = pyro.param('lam1', torch.ones((1, self.attr_size)), constraint=constraints.positive)
+        with FreeMessenger(free=self.lam1_free):
+            lam1 = pyro.param('lam1', self.lam1_init)
         g = pyro.param('g', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         all_p = dina(self.all_attr, self.q, g, s)
         with pyro.plate("data", sample_size) as idx:
-            theta = pyro.sample(
-                'theta',
-                dist.Normal(torch.zeros((len(idx), 1)), torch.ones((len(idx), 1))).to_event(1)
-            )
+            if self.theta_feature < 2:
+                theta = pyro.sample(
+                    'theta',
+                    dist.Normal(torch.zeros((len(idx), 1)), torch.ones((len(idx), 1))).to_event(1)
+                )
+            else:
+                theta = pyro.sample(
+                    'theta',
+                    dist.MultivariateNormal(
+                        torch.zeros((len(idx), self.theta_feature)),
+                        torch.eye(self.theta_feature)
+                    )
+                )
             attr_p = torch.sigmoid(theta.mm(lam1) + lam0)
             likelihood_attr_p = torch.exp(torch.log(attr_p).mm(self.all_attr.T) + torch.log(1 - attr_p).mm(1 - self.all_attr.T))
             attr_idx = pyro.sample(
@@ -1061,7 +1078,10 @@ class VHoDina(VCDM):
                             'g': '{0}'.format((g - random_instance.g).pow(2).sqrt().mean()),
                             's': '{0}'.format((s - random_instance.s).pow(2).sqrt().mean()),
                             'lam0': '{0}'.format((lam0 - random_instance.lam0).pow(2).sqrt().mean()),
-                            'lam1': '{0}'.format((lam1 - random_instance.lam1).pow(2).sqrt().mean()),
+                            'lam1': '{0}'.format(
+                                (lam1 - random_instance.lam1).pow(2).sqrt().sum()
+                                /
+                                (self.theta_feature * self.attr_size - self.theta_feature * (self.theta_feature - 1) / 2)),
                         })
                     t.set_postfix(loss=loss, **postfix_kwargs)
 
@@ -1071,7 +1091,10 @@ class VaeHoDina(VHoDina):
 
     def __init__(self, hidden_dim=64, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
+        if self.theta_feature > 1:
+            self.encoder = MvnEncoder(self.item_size, self.theta_feature, hidden_dim, share_cov=False)
+        else:
+            self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
 
     def guide(self, data):
         sample_size = self.sample_size
@@ -1083,10 +1106,16 @@ class VaeHoDina(VHoDina):
             if data_nan.any():
                 data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
             theta_local, theta_scale = self.encoder.forward(data_)
-            pyro.sample(
-                'theta',
-                dist.Normal(theta_local, theta_scale).to_event(1)
-            )
+            if self.theta_feature > 1:
+                pyro.sample(
+                    'theta',
+                    dist.MultivariateNormal(theta_local, scale_tril=theta_scale)
+                )
+            else:
+                pyro.sample(
+                    'theta',
+                    dist.Normal(theta_local, theta_scale).to_event(1)
+                )
 
 
 class JABaseCDM(BaseCDM):
@@ -1120,12 +1149,8 @@ class JABaseCDM(BaseCDM):
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
-                        # attr_p = self.encoder.forward(self.data)
+                        attr_p = self.encoder.forward(self.data)
                         # attr_p = pyro.param('attr_p')
-                        x, _ = self.encoder.forward(self.data)
-                        lam0 = pyro.param('lam0')
-                        lam1 = pyro.param('lam1')
-                        attr_p = torch.sigmoid(x.mm(lam1) + lam0)
                         attr_p[attr_p > 0.5] = 1
                         attr_p[attr_p <= 0.5] = 0
                         ac = attr_p - random_instance.attr
