@@ -185,21 +185,25 @@ test_cdm <- function(base_path, try_count) {
       res_lam1 <- append(res_lam1, lam1_rmse)
     }
   }
-  rmse <- list(g = res_g, s = res_s, lam0 = res_lam0, lam1 = res_lam1)
-    rmse$success_ct <- success_ct
-    rmse$time_lt <- time_lt
-    print(str_c('success count:', rmse$success_ct))
-    print(str_c('time_mean:', mean(rmse$time_lt)))
-    print(str_c('mean_g:', mean(rmse$g)))
-    print(str_c('std_g:', sd(rmse$g)))
-    print(str_c('mean_s:', mean(rmse$s)))
-    print(str_c('std_s:', sd(rmse$s)))
-    if (model_name == 'ho-dina') {
-      print(str_c('mean_lam0:', mean(rmse$lam0)))
-      print(str_c('std_lam0:', sd(rmse$lam0)))
-      print(str_c('mean_lam1:', mean(rmse$lam1)))
-      print(str_c('std_lam1:', sd(rmse$lam1)))
-    }
+  if (model_name == 'ho-dina') {
+    rmse <- list(g = res_g, s = res_s, lam0 = res_lam0, lam1 = res_lam1)
+  } else {
+    rmse <- list(g = res_g, s = res_s)
+  }
+  rmse$success_ct <- success_ct
+  rmse$time_lt <- time_lt
+  print(str_c('success count:', rmse$success_ct))
+  print(str_c('time_mean:', mean(rmse$time_lt)))
+  print(str_c('mean_g:', mean(rmse$g)))
+  print(str_c('std_g:', sd(rmse$g)))
+  print(str_c('mean_s:', mean(rmse$s)))
+  print(str_c('std_s:', sd(rmse$s)))
+  if (model_name == 'ho-dina') {
+    print(str_c('mean_lam0:', mean(rmse$lam0)))
+    print(str_c('std_lam0:', sd(rmse$lam0)))
+    print(str_c('mean_lam1:', mean(rmse$lam1)))
+    print(str_c('std_lam1:', sd(rmse$lam1)))
+  }
   return(rmse)
 }
 #print('100样本，50题，1维，2参数，EM算法')
@@ -299,7 +303,7 @@ test_cdm <- function(base_path, try_count) {
 ##                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),
 ##                GenRandomPars = FALSE, custom_pars = TRUE)
 print('dina')
-res <- test_cdm("cdm/cdm_dina_sample_2000_item_100", 1)
+res <- test_cdm("cdm/cdm_dina_sample_1000_item_100", 1)
 #print('irt, 缺失数据')
 #res <- test_irt("miss/irt_2pl_sample_1000_item_50_dim_2", 1, 'EM',
 #                technical = list(NCYCLES = 2000, info_if_converged = FALSE, logLik_if_converged = FALSE),

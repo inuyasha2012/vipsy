@@ -365,8 +365,8 @@ class Irt2PLTestCase(TestCase, TestMixin, IRTRandomMixin):
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
     def test_ai(self):
-        y, random_instance = self.gen_sample(RandomIrt2PL, 100000)
-        model = VaeIRT(data=y, model='irt_2pl', subsample_size=10000)
+        y, random_instance = self.gen_sample(RandomIrt2PL, 1000)
+        model = VaeIRT(data=y, model='irt_2pl', subsample_size=500)
         model.fit(random_instance=random_instance, optim=Adam({'lr': 1e-2}), max_iter=50000)
 
 
@@ -971,12 +971,12 @@ class ArticleTest(TestCase):
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 7000},
+            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 20000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 2},
             start_idx=0,
-            try_count=10,
-            process_size=2,
+            try_count=4,
+            process_size=1,
             folder='dt'
         )
 
@@ -986,7 +986,7 @@ class ArticleTest(TestCase):
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={'subsample_size': 100},
-            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 7000},
+            vi_fit_kwargs={'optim': Adam({'lr': 5e-3}), 'max_iter': 50000},
             random_class=RandomIrt2PL,
             random_class_kwargs={'x_feature': 3},
             start_idx=0,
@@ -1244,13 +1244,13 @@ class ArticleTest(TestCase):
     def test_ja_dina_ai_try_10_item_100_sample_1000(self):
 
         multiprocess_article_test_util(
-            sample_size=2000,
+            sample_size=1000,
             item_size=100,
             vi_class=JAVaeCDM,
-            vi_class_kwargs={'subsample_size': 2000},
+            vi_class_kwargs={'subsample_size': 500, 'hidden_dim': 64},
             vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 1000000},
-            random_class=RandomDina,
-            random_class_kwargs={'q_size': 3},
+            random_class=RandomLargeScaleDina,
+            random_class_kwargs={'q_size': 20, 'corr': 0.3},
             start_idx=0,
             try_count=1,
             process_size=1,
@@ -1300,7 +1300,7 @@ class ArticleTest(TestCase):
             item_size=100,
             vi_class=VaeHoDina,
             vi_class_kwargs={'subsample_size': 100, 'theta_feature': 2},
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 20000},
             random_class=RandomHoDina,
             random_class_kwargs={'q_size': 5, 'theta_feature': 2},
             start_idx=0,
@@ -1350,15 +1350,15 @@ class ArticleTest(TestCase):
         y_val = y[-num_validation_samples:]
         model = VaeIRT(
             data=y_train,
-            model='irt_3pl',
+            model='irt_2pl',
             subsample_size=400,
-            x_feature=10,
+            x_feature=5,
             val_data=y_val,
-            share_posterior_cov=False,
-            prior_free=True,
-            share_prior_cov=True,
-            neural_prior_cov=False,
-            neural_share_posterior_cov=False
+            # share_posterior_cov=False,
+            # prior_free=True,
+            # share_prior_cov=True,
+            # neural_prior_cov=False,
+            # neural_share_posterior_cov=False
         )
         model.fit(optim=Adam({'lr': 1e-3}), max_iter=100000)
 
@@ -1378,33 +1378,33 @@ class ArticleTest(TestCase):
             subsample_size=100,
             x_feature=5,
             val_data=y_val,
-            share_posterior_cov=True,
-            prior_free=True,
-            share_prior_cov=True,
-            neural_prior_cov=False,
-            neural_share_posterior_cov=False
+            # share_posterior_cov=True,
+            # prior_free=True,
+            # share_prior_cov=True,
+            # neural_prior_cov=False,
+            # neural_share_posterior_cov=False
         )
         model.fit(optim=Adam({'lr': 1e-3}), max_iter=500000000)
 
     def test_ai_miss_try_10_item_100_sample_1000(self):
         x_local = torch.zeros((2,))
         x_cov = torch.eye(2)
-        x_cov[0, 1] = x_cov[1, 0] = 0.7
+        x_cov[0, 1] = x_cov[1, 0] = 0.3
         multiprocess_article_test_util(
             # model_name='2pl',
             # x_feature_size=2,
-            sample_size=1000,
+            sample_size=10000,
             item_size=50,
             vi_class=VaeIRT,
             vi_class_kwargs={
                 'subsample_size': 500,
-                'share_posterior_cov': True,
+                'share_posterior_cov': False,
                 'share_prior_cov': True,
                 'prior_free': True,
-                'neural_share_posterior_cov': False,
+                # 'neural_share_posterior_cov': True,
                 'neural_prior_cov': True
             },
-            vi_fit_kwargs={'optim': Adam({'lr': 1e-3}), 'max_iter': 10000},
+            vi_fit_kwargs={'optim': Adam({'lr': 1e-2}), 'max_iter': 10000},
             random_class=RandomIrt2PL,
             random_class_kwargs={
                 'x_feature': 2,

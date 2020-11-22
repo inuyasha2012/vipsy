@@ -83,6 +83,19 @@ def dina(attr, q, g, s):
     yita[yita < qq] = 0
     yita[yita == qq] = 1
     p = (1 - s) ** yita * g ** (1 - yita)
+    p[p > 1] = 1
+    p[p < 0] = 0
+    return p
+
+
+def dina_(attr, q, f, d):
+    yita = attr.mm(q)
+    qq = (q ** 2).sum(dim=0)
+    yita[yita < qq] = 0
+    yita[yita == qq] = 1
+    p = f + d * yita
+    p[p > 1] = 1
+    p[p < 0] = 0
     return p
 
 
@@ -156,6 +169,37 @@ class RandomDina(RandomPsyData):
         self.attr = torch.FloatTensor(self.sample_size, q_size).bernoulli_(attr_p)
         self.g = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
         self.s = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
+
+    @property
+    def y(self):
+        p = dina(self.attr, self.q, self.g, self.s)
+        return torch.FloatTensor(*p.size()).bernoulli_(p)
+
+
+class RandomDina_(RandomPsyData):
+    # 生成随机DINA模型数据
+    name = 'dina'
+
+    def __init__(self, q_size=5, q_p=0.5, attr_p=0.5, *args, **kwargs):
+        """
+        :param q_size: q矩阵的行数
+        :param q_p: q矩阵的二项分布概率
+        :param attr_p: 属性掌握的二项分布概率
+        :param args:
+        :param kwargs:
+        """
+        super().__init__(*args, **kwargs)
+        self.q_size = q_size
+        self.q = torch.FloatTensor(q_size, self.item_size).bernoulli_(q_p)
+        q_eye = torch.eye(q_size)
+        q_sum = self.q.sum(0)
+        if torch.any(q_sum == 0):
+            idx = dist.Categorical(torch.zeros(q_size) + 1).sample((self.q[:, q_sum == 0].size(1),))
+            self.q[:, q_sum == 0] = q_eye[idx].T
+        self.attr = torch.FloatTensor(self.sample_size, q_size).bernoulli_(attr_p)
+        self.g = torch.FloatTensor(1, self.item_size).uniform_(0, 0.3)
+        self.s_ = torch.FloatTensor(1, self.item_size).uniform_(0.7, 1)
+        self.s = self.s_ - self.g
 
     @property
     def y(self):
@@ -663,13 +707,13 @@ class BaseIRT(BasePsy):
             irt_param_kwargs['d'] = pyro.param('d', torch.ones((1, item_size)) - 0.1,
                                                constraint=constraints.unit_interval)
         if self.x_feature == 1:
-            with pyro.plate("data", sample_size, dim=-2) as idx:
+            with pyro.plate("data", sample_size) as idx:
                 irt_param_kwargs['x'] = pyro.sample(
                     'x',
-                    dist.Normal(torch.zeros((len(idx), self.x_feature)), torch.ones((len(idx), self.x_feature)))
+                    dist.Normal(torch.zeros((len(idx), self.x_feature)), torch.ones((len(idx), self.x_feature))).to_event(1)
                 )
                 p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
-                pyro.sample('y', dist.Bernoulli(p), obs=data_)
+                pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
         else:
             x_cov0 = torch.eye(self.x_feature)
             if self.share_prior_cov:
@@ -760,28 +804,28 @@ class BaseIRT(BasePsy):
         :param random_instance: 随机数据生成实例
         """
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
-        with trange(max_iter, disable=True) as t:
+        with trange(max_iter) as t:
             for i in t:
                 t.set_description(f'迭代：{i}')
                 loss = svi.step(self.data)
                 if isinstance(optim, PyroLRScheduler):
                     optim.step()
-                if i % 3500 == 0:
-                    # marginal = self.test().item()
-                    # print(marginal)
-                    val_data = self.kwargs.get('val_data', self.data)
-                    roc_auc = self.get_roc_auc(val_data)
-                    print(roc_auc)
-                    roc_auc1 = self.get_roc_auc(self.data)
-                    print(roc_auc1)
+                # if i % 10 == 0:
+                #     # marginal = self.test().item()
+                #     # print(marginal)
+                #     val_data = self.kwargs.get('val_data', self.data)
+                #     roc_auc = self.get_roc_auc(val_data)
+                #     print(roc_auc)
+                #     # roc_auc1 = self.get_roc_auc(self.data)
+                #     # print(roc_auc1)
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
                         b = pyro.param('b')
                         postfix_kwargs['threshold_error'] = '{0}'.format((b - random_instance.b).pow(2).sqrt().mean())
-                        # x, _ = self.encoder.forward(self.data)
+                        x, _ = self.encoder.forward(self.data)
                         # x = pyro.param('x_local')
-                        # postfix_kwargs['x_error'] = '{0}'.format((x - random_instance.x).pow(2).sqrt().mean())
+                        postfix_kwargs['x_error'] = '{0}'.format((x - random_instance.x).pow(2).sqrt().mean())
                         # x_cov0 = pyro.param('x_cov0')
                         # x_cov = torch.eye(2)
                         # x_cov[0, 1] = x_cov[1, 0] = 0.7
@@ -796,7 +840,7 @@ class BaseIRT(BasePsy):
                         if self._model == 'irt_4pl':
                             d = pyro.param('d')
                             postfix_kwargs['slip_error'] = '{0}'.format((d - random_instance.d).pow(2).sqrt().mean())
-                    # t.set_postfix(loss='{0:1.2f}'.format(loss), **postfix_kwargs)
+                    t.set_postfix(loss='{0:1.2f}'.format(loss), **postfix_kwargs)
 
 
 class VaeIRT(BaseIRT):
@@ -821,13 +865,13 @@ class VaeIRT(BaseIRT):
         subsample_size = self.subsample_size
         pyro.module('encoder', self.encoder)
         if self.x_feature == 1:
-            with pyro.plate("data", sample_size, subsample_size=subsample_size, dim=-2) as idx:
+            with pyro.plate("data", sample_size, subsample_size=subsample_size) as idx:
                 data_ = data[idx]
                 data_nan = torch.isnan(data_)
                 if data_nan.any():
                     data_ = torch.where(data_nan, torch.full_like(data_, -1), data_)
                 x_local, x_scale = self.encoder.forward(data_)
-                pyro.sample('x', dist.Normal(x_local, x_scale))
+                pyro.sample('x', dist.Normal(x_local, x_scale).to_event(1))
         else:
             if self.share_posterior_cov and not self.neural_share_posterior_cov:
                 x_scale = pyro.param(
@@ -1020,10 +1064,10 @@ class VHoDina(VCDM):
         s = pyro.param('s', torch.zeros((1, item_size)) + 0.1, constraint=constraints.interval(0, 1))
         all_p = dina(self.all_attr, self.q, g, s)
         with pyro.plate("data", sample_size) as idx:
-            if self.theta_feature < 2:
+            if self.theta_feature == 1:
                 theta = pyro.sample(
                     'theta',
-                    dist.Normal(torch.zeros((len(idx), 1)), torch.ones((len(idx), 1))).to_event(1)
+                    dist.Normal(torch.zeros((len(idx), self.theta_feature)), torch.ones((len(idx), self.theta_feature))).to_event(1)
                 )
             else:
                 theta = pyro.sample(
@@ -1094,7 +1138,7 @@ class VaeHoDina(VHoDina):
         if self.theta_feature > 1:
             self.encoder = MvnEncoder(self.item_size, self.theta_feature, hidden_dim, share_cov=False)
         else:
-            self.encoder = NormEncoder(self.item_size, 1, hidden_dim)
+            self.encoder = NormEncoder(self.item_size, self.theta_feature, hidden_dim)
 
     def guide(self, data):
         sample_size = self.sample_size
