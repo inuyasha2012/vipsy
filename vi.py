@@ -4,6 +4,7 @@ from math import nan
 
 from pyro.distributions.transforms import CorrLCholeskyTransform
 from sklearn.metrics import roc_auc_score
+import pickle as pkl
 
 import numpy as np
 import torch
@@ -83,8 +84,6 @@ def dina(attr, q, g, s):
     yita[yita < qq] = 0
     yita[yita == qq] = 1
     p = (1 - s) ** yita * g ** (1 - yita)
-    p[p > 1] = 1
-    p[p < 0] = 0
     return p
 
 
@@ -238,8 +237,8 @@ class RandomLargeScaleDina(RandomPsyData):
         attr[attr > 0] = 1
         attr[attr <= 0] = 0
         self.attr = attr
-        self.g = torch.FloatTensor(1, self.q_size * 3).uniform_(g_lower, g_upper)
-        self.s = torch.FloatTensor(1, self.q_size * 3).uniform_(s_lower, s_upper)
+        self.g = torch.FloatTensor(1, self.q.size(1)).uniform_(g_lower, g_upper)
+        self.s = torch.FloatTensor(1, self.q.size(1)).uniform_(s_lower, s_upper)
 
     @property
     def y(self):
@@ -738,15 +737,16 @@ class BaseIRT(BasePsy):
                     x_cov = self.prior_encoder(self.data[idx])
                 if not self.share_prior_cov:
                     x_cov = x_cov_[idx]
-                irt_param_kwargs['x'] = pyro.sample(
-                    'x',
-                    dist.MultivariateNormal(
-                        torch.zeros((len(idx), self.x_feature)),
-                        scale_tril=x_cov
+                with poutine.scale(scale=1):
+                    irt_param_kwargs['x'] = pyro.sample(
+                        'x',
+                        dist.MultivariateNormal(
+                            torch.zeros((len(idx), self.x_feature)),
+                            scale_tril=x_cov
+                        )
                     )
-                )
-                p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
-                pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
+                    p, data_ = self._get_p_data(data, idx, irt_param_kwargs)
+                    pyro.sample('y', dist.Bernoulli(p).to_event(1), obs=data_)
 
     def _get_p_data(self, data, idx, irt_param_kwargs):
         irt_fun = self.IRT_FUN[self._model]
@@ -782,14 +782,20 @@ class BaseIRT(BasePsy):
                 y_true.numpy(),
                 y_pred.numpy(),
             )
-            return roc_auc
+            return roc_auc, y_pred, y_true
 
     def get_marginal(self, data):
         with torch.no_grad():
+            if data.size(0) == 200:
+                self.sample_size = data.size(0)
+                self.subsample_size = data.size(0)
+            else:
+                self.sample_size = data.size(0)
+                self.subsample_size = data.size(0)
             posterior = Importance(
                 model=self.model,
                 guide=self.guide,
-                num_samples=100,
+                num_samples=10,
             )
             posterior = posterior.run(data)
             log_weights = torch.stack(posterior.log_weights)
@@ -810,14 +816,13 @@ class BaseIRT(BasePsy):
                 loss = svi.step(self.data)
                 if isinstance(optim, PyroLRScheduler):
                     optim.step()
-                # if i % 10 == 0:
-                #     # marginal = self.test().item()
-                #     # print(marginal)
-                #     val_data = self.kwargs.get('val_data', self.data)
-                #     roc_auc = self.get_roc_auc(val_data)
-                #     print(roc_auc)
-                #     # roc_auc1 = self.get_roc_auc(self.data)
-                #     # print(roc_auc1)
+                if i % 20 == 0:
+                    val_data = self.kwargs.get('val_data', self.data)
+                    # self.get_marginal(val_data).item()
+                    # self.get_marginal(self.data).item()
+                    # self.get_roc_auc(self.data)
+                    auc = self.get_roc_auc(val_data)[0]
+                    print(auc)
                 with torch.no_grad():
                     postfix_kwargs = {}
                     if random_instance is not None:
@@ -826,10 +831,6 @@ class BaseIRT(BasePsy):
                         x, _ = self.encoder.forward(self.data)
                         # x = pyro.param('x_local')
                         postfix_kwargs['x_error'] = '{0}'.format((x - random_instance.x).pow(2).sqrt().mean())
-                        # x_cov0 = pyro.param('x_cov0')
-                        # x_cov = torch.eye(2)
-                        # x_cov[0, 1] = x_cov[1, 0] = 0.7
-                        # postfix_kwargs['x_cov0'] = '{0}'.format((x_cov0.mm(x_cov0.T) - x_cov).pow(2).sqrt().sum() / 2)
                         if self._model in ('irt_2pl', 'irt_3pl', 'irt_4pl'):
                             a = pyro.param('a')
                             a_error = (a - random_instance.a).pow(2).sqrt().sum() / (self.x_feature * self.item_size - self.x_feature * (self.x_feature - 1) / 2)
@@ -841,7 +842,16 @@ class BaseIRT(BasePsy):
                             d = pyro.param('d')
                             postfix_kwargs['slip_error'] = '{0}'.format((d - random_instance.d).pow(2).sqrt().mean())
                     t.set_postfix(loss='{0:1.2f}'.format(loss), **postfix_kwargs)
-
+        test_marginal = self.get_marginal(val_data).item()
+        train_marginal = self.get_marginal(self.data).item()
+        train_auc, train_pred, train_true = self.get_roc_auc(self.data)
+        test_auc, test_pred, test_true = self.get_roc_auc(val_data)
+        with open('true.pkl', 'wb') as f:
+            pkl.dump(
+                {'test_marginal': test_marginal, 'train_marginal':train_marginal,
+                 'train_auc': train_auc, 'test_auc': test_auc, 'test_pred': test_pred,
+                 'test_true':test_true, 'train_pred':train_pred, 'train_true':train_true
+                 }, f)
 
 class VaeIRT(BaseIRT):
 
